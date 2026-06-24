@@ -1,0 +1,7 @@
+# This project is built in WSL; keep LF endings so the toolchain is happy
+# even though the working copy lives on the Windows filesystem.
+* text=auto eol=lf
+*.rs   text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+*.lock text eol=lf
