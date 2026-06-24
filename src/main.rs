@@ -101,8 +101,9 @@ enum Command {
         #[command(subcommand)]
         action: RemoteCmd,
     },
-    /// Clone a repository from a jag server URL
-    Clone {
+    /// Download (clone) a repository from a jag server URL
+    #[command(name = "dl", visible_alias = "clone")]
+    Dl {
         /// Server URL, e.g. http://127.0.0.1:9418
         url: String,
         /// Destination directory (default: jag-clone)
@@ -190,14 +191,14 @@ fn run(cli: Cli) -> Result<()> {
     // init and clone are the only commands that run without an existing repo.
     match &cli.command {
         Command::Init => return commands::init(std::env::current_dir()?),
-        Command::Clone { url, dir } => return commands::clone(url, dir.clone()),
+        Command::Dl { url, dir } => return commands::clone(url, dir.clone()),
         _ => {}
     }
 
     let repo = Repo::find(None, cli.agent.clone())?;
     match cli.command {
         Command::Init => unreachable!(),
-        Command::Clone { .. } => unreachable!(),
+        Command::Dl { .. } => unreachable!(),
         Command::Status => commands::status(&repo),
         Command::Add { paths } => commands::add(&repo, &paths),
         Command::Commit { message } => commands::commit(&repo, &message),

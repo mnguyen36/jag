@@ -119,7 +119,8 @@ are listed; `reconcile` excludes `/`-containing lanes from its default sources.
 ### CLI flow
 `main.rs` (clap) parses, resolves the acting agent (`--agent` > `JAG_AGENT` >
 config default), then dispatches to a handler in `commands.rs`. `init` and
-`clone` are the only commands that run without an existing repo.
+`dl` (clone; `Command::Dl`, alias `clone`) are the only commands that run
+without an existing repo. The handler is still `commands::clone`.
 
 ## Conventions / gotchas
 - Paths are stored with `/` separators everywhere (normalized on the way in).

@@ -24,7 +24,7 @@ pub fn serve(repo: &Repo, addr: &str, threads: usize) -> Result<()> {
     let server = Arc::new(Server::http(addr).map_err(|e| anyhow!("cannot bind {addr}: {e}"))?);
     let ref_lock = Arc::new(Mutex::new(()));
     println!("jag server for {} listening on http://{addr}", repo.root.display());
-    println!("clone it with:  jag clone http://{addr} <dir>");
+    println!("download it with:  jag dl http://{addr} <dir>");
 
     let mut handles = Vec::new();
     for _ in 0..threads.max(1) {

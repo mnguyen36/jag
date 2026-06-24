@@ -63,9 +63,9 @@ jag reconcile [--into main]   merge agent lanes; auto-resolves disjoint work
 jag merge                     alias for reconcile
 jag contention                paths multiple agents/lanes changed differently
 
-jag serve [--addr H:P]        serve this repo over HTTP for clone/fetch/push
-jag clone <url> [dir]         clone from a jag server
-jag remote add <name> <url>   register a remote (clone adds 'origin')
+jag serve [--addr H:P]        serve this repo over HTTP for dl/fetch/push
+jag dl <url> [dir]            download (clone) from a jag server  (alias: clone)
+jag remote add <name> <url>   register a remote (dl adds 'origin')
 jag remote list | remove      manage remotes
 jag fetch [remote]            download objects + lanes (fast-forwards locals)
 ```
@@ -101,8 +101,8 @@ JAG syncs over plain HTTP. One `jag serve` process serves one repository.
 # machine/terminal A — host a repo
 $ cd my-repo && jag serve --addr 127.0.0.1:9418
 
-# machine/terminal B — clone, change, push back
-$ jag clone http://127.0.0.1:9418 my-clone
+# machine/terminal B — download, change, push back
+$ jag dl http://127.0.0.1:9418 my-clone
 $ cd my-clone
 $ echo hi >> file.txt && jag add file.txt && jag commit -m "edit"
 $ jag push origin main
@@ -115,14 +115,24 @@ objects are re-hashed before they're stored).
 
 ## Install
 
-JAG is a single self-contained binary built with Rust.
+JAG is a single self-contained binary (pure Rust, no runtime, no extra DLLs).
+It runs on **Windows, macOS, and Linux** — same source, same commands.
 
 ```
-cargo build --release
-cargo install --path .        # puts `jag` on your PATH
+cargo build --release          # native binary for the current OS
+cargo install --path .         # put `jag` (or jag.exe) on your PATH
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the architecture and development workflow.
+Cross-compiling (e.g. building the Windows binary from Linux/WSL):
+
+```
+rustup target add x86_64-pc-windows-gnu
+cargo build --release --target x86_64-pc-windows-gnu   # -> jag.exe
+```
+
+The Windows binary links only against system DLLs, so it's a single ~2 MB
+`jag.exe` you can drop on your PATH. See [CLAUDE.md](CLAUDE.md) for the
+architecture and development workflow.
 
 ## Status
 
