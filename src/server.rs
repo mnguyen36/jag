@@ -72,6 +72,10 @@ fn handle(repo: &Repo, ref_lock: &Mutex<()>, mut req: Request) -> std::io::Resul
             Ok(v) => (200, serde_json::to_vec(&v).unwrap_or_default(), "application/json"),
             Err(e) => (404, e.to_string().into_bytes(), "text/plain"),
         },
+        (Method::Post, ["api", "lane", name]) => match crate::web::create_lane(repo, name) {
+            Ok(v) => (200, serde_json::to_vec(&v).unwrap_or_default(), "application/json"),
+            Err(e) => (400, e.to_string().into_bytes(), "text/plain"),
+        },
         // --- sync protocol ---
         (Method::Get, ["refs"]) => match build_refs(repo) {
             Ok(b) => (200, b, "application/json"),

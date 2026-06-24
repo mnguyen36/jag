@@ -64,6 +64,28 @@
   .eyebrow .now { font-family:var(--mono); font-size:10px; color:var(--amber);
                   text-transform:uppercase; letter-spacing:.22em; }
 
+  /* ---- new lane control ---- */
+  .newlane { display:flex; align-items:center; gap:8px; }
+  .addlane { font-family:var(--mono); font-size:10px; color:var(--amber);
+             text-transform:uppercase; letter-spacing:.18em; cursor:pointer;
+             background:transparent; border:1px solid color-mix(in srgb,var(--amber) 35%,var(--line));
+             border-radius:2px; padding:3px 9px; transition:border-color .12s,background .12s; }
+  .addlane:hover { border-color:var(--amber); background:color-mix(in srgb,var(--amber) 10%,transparent); }
+  .newlane-form { display:flex; align-items:center; gap:6px; }
+  .newlane-form[hidden] { display:none; }
+  .newlane-input { font-family:var(--mono); font-size:11px; color:var(--text);
+                   background:var(--panel-2); border:1px solid var(--line-2); border-radius:2px;
+                   padding:3px 8px; width:150px; }
+  .newlane-input::placeholder { color:var(--dim); }
+  .newlane-go { font-family:var(--mono); font-size:10px; color:var(--bg);
+                text-transform:uppercase; letter-spacing:.16em; cursor:pointer;
+                background:var(--amber); border:1px solid var(--amber); border-radius:2px; padding:3px 9px; }
+  .newlane-go:hover { background:color-mix(in srgb,var(--amber) 85%,#fff); }
+  .newlane-x { font-family:var(--mono); font-size:11px; color:var(--muted); cursor:pointer;
+               background:transparent; border:1px solid var(--line-2); border-radius:2px; padding:3px 7px; }
+  .newlane-x:hover { color:var(--text); border-color:var(--muted); }
+  .newlane-err { font-family:var(--mono); font-size:10px; color:var(--vermilion); max-width:260px; }
+
   /* ---- lane board (the signature) ---- */
   .board { border:1px solid var(--line); background:
            linear-gradient(var(--panel),var(--panel-2)); border-radius:3px; overflow:hidden; }
@@ -199,7 +221,18 @@
   <section class="strip" id="strip" aria-label="repository summary"></section>
 
   <div class="eyebrow">
-    <h2>Lanes</h2><div class="rule"></div><span class="now">head ▸ now</span>
+    <h2>Lanes</h2><div class="rule"></div>
+    <span class="now">head ▸ now</span>
+    <div class="newlane" id="newlane">
+      <button class="addlane" id="addlane" type="button" onclick="toggleNewLane(true)">+ lane</button>
+      <span class="newlane-form" id="newlaneForm" hidden>
+        <input class="newlane-input" id="newlaneName" type="text" placeholder="lane name"
+               autocomplete="off" spellcheck="false" onkeydown="if(event.key==='Enter')newLane();else if(event.key==='Escape')toggleNewLane(false);" />
+        <button class="newlane-go" type="button" onclick="newLane()">create</button>
+        <button class="newlane-x" type="button" onclick="toggleNewLane(false)">✕</button>
+        <span class="newlane-err" id="newlaneErr"></span>
+      </span>
+    </div>
   </div>
   <section class="board" id="board"></section>
 
@@ -356,6 +389,32 @@ document.addEventListener('click', (e) => {
   if(e.target === scrim) closeDiff();
 });
 document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeDiff(); });
+
+// ---- new lane ----
+function toggleNewLane(open){
+  const form = $('newlaneForm'), btn = $('addlane');
+  $('newlaneErr').textContent = '';
+  if(open){
+    form.hidden = false; btn.hidden = true;
+    const inp = $('newlaneName'); inp.value = ''; inp.focus();
+  } else {
+    form.hidden = true; btn.hidden = false; $('newlaneName').value = '';
+  }
+}
+async function newLane(){
+  const name = $('newlaneName').value.trim();
+  const err = $('newlaneErr');
+  err.textContent = '';
+  if(!name){ err.textContent = 'name required'; return; }
+  try {
+    const r = await fetch('/api/lane/' + encodeURIComponent(name), {method:'POST'});
+    if(!r.ok){ err.textContent = (await r.text()) || ('HTTP ' + r.status); return; }
+    toggleNewLane(false);
+    tick();
+  } catch(e){
+    err.textContent = e.message;
+  }
+}
 
 let fails = 0;
 async function tick(){

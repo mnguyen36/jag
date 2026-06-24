@@ -3,14 +3,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
 use crate::agent::list_agents;
 use crate::commit::read_commit;
 use crate::objects::read_object;
 use crate::reconcile::find_contention;
-use crate::refs::{current_lane, head_commit, list_lanes};
+use crate::refs::{current_lane, head_commit, list_lanes, read_lane, write_lane};
 use crate::repo::Repo;
 use crate::tree::flatten_tree;
 
@@ -130,6 +130,21 @@ pub fn overview(repo: &Repo) -> Result<Value> {
         "contention": contention,
         "commits": commits,
     }))
+}
+
+/// Open a new lane from the dashboard, branching it off `main`'s current tip.
+pub fn create_lane(repo: &Repo, name: &str) -> Result<Value> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().any(char::is_whitespace) {
+        bail!("lane name must be non-empty and contain no whitespace");
+    }
+    if read_lane(repo, name)?.is_some() {
+        bail!("lane already exists");
+    }
+    let tip = read_lane(repo, "main")?
+        .ok_or_else(|| anyhow::anyhow!("no main lane to branch from"))?;
+    write_lane(repo, name, &tip)?;
+    Ok(json!({ "ok": true, "name": name, "tip": tip, "short": short(&tip) }))
 }
 
 /// Blob contents as lines, or `None` if it looks binary.
