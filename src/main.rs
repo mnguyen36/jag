@@ -91,6 +91,9 @@ enum Command {
         into: String,
         #[arg(short = 'm', long)]
         message: Option<String>,
+        /// Apply without confirming (skip the interactive preview prompt)
+        #[arg(short = 'y', long)]
+        yes: bool,
         /// Source lanes (default: every lane except the target)
         lanes: Vec<String>,
     },
@@ -221,8 +224,9 @@ fn run(cli: Cli) -> Result<()> {
         Command::Reconcile {
             into,
             message,
+            yes,
             lanes,
-        } => commands::reconcile(&repo, &into, message, lanes),
+        } => commands::reconcile(&repo, &into, message, lanes, yes),
         Command::Contention => commands::contention(&repo),
         Command::Remote { action } => match action {
             RemoteCmd::Add { name, url } => commands::remote_add(&repo, &name, &url),

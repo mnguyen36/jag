@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -484,15 +485,20 @@ pub fn reconcile(
     into: &str,
     message: Option<String>,
     lanes: Vec<String>,
+    yes: bool,
 ) -> Result<()> {
     let plan = plan_reconcile(repo, into, lanes)?;
     if plan.sources.is_empty() {
-        println!("no source lanes to reconcile into '{into}'");
+        println!("nothing to merge into '{into}' (no other lanes)");
         return Ok(());
     }
+
+    // --- preview: list exactly what the merge will do, before doing it ---
+    println!("Merge plan:  [{}]  ->  '{}'", plan.sources.join(", "), into);
+
     if !plan.conflicts.is_empty() {
         println!(
-            "contention — {} path(s) changed differently by multiple sources:",
+            "\n  contention — {} path(s) changed differently by multiple sources:",
             plan.conflicts.len()
         );
         for (path, srcvals) in &plan.conflicts {
@@ -503,12 +509,64 @@ pub fn reconcile(
                     None => format!("{s}=deleted"),
                 })
                 .collect();
-            println!("    {path}  [{}]", producers.join(", "));
+            println!("    ! {path}  [{}]", producers.join(", "));
         }
-        println!("\nReconcile aborted. Resolve by checking out a lane, editing the path,");
-        println!("and committing, then re-run `jag reconcile`.");
-        bail!("unresolved contention");
+        println!("\nResolve those paths (jag checkout <lane>, edit, jag push), then re-run.");
+        bail!("merge aborted: unresolved contention");
     }
+
+    // Show the per-file effect on the target lane (base tree vs merged tree).
+    let base = match &plan.base_tip {
+        Some(t) => flatten_tree(repo, &commit_tree(repo, Some(t))?.unwrap(), "")?,
+        None => BTreeMap::new(),
+    };
+    let mut keys: BTreeSet<&String> = base.keys().collect();
+    keys.extend(plan.merged.keys());
+    let (mut added, mut modified, mut deleted) = (0u32, 0u32, 0u32);
+    for k in keys {
+        let b = base.get(k).map(|x| x.1.as_str());
+        let m = plan.merged.get(k).map(|x| x.1.as_str());
+        match (b, m) {
+            (a, c) if a == c => {}
+            (None, Some(_)) => {
+                println!("    + {k}");
+                added += 1;
+            }
+            (Some(_), None) => {
+                println!("    - {k}");
+                deleted += 1;
+            }
+            _ => {
+                println!("    ~ {k}");
+                modified += 1;
+            }
+        }
+    }
+    if added + modified + deleted == 0 {
+        println!("  (no changes — '{into}' already contains this work)");
+        return Ok(());
+    }
+    println!("\n  {added} added, {modified} modified, {deleted} deleted");
+
+    // --- confirm, unless --yes ---
+    if !yes {
+        if std::io::stdin().is_terminal() {
+            print!("\nProceed with merge? [y/N] ");
+            std::io::stdout().flush()?;
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)?;
+            let ans = line.trim().to_lowercase();
+            if ans != "y" && ans != "yes" {
+                println!("merge cancelled — nothing changed");
+                return Ok(());
+            }
+        } else {
+            println!("\nPreview only. Re-run with --yes (-y) to apply this merge.");
+            return Ok(());
+        }
+    }
+
+    // --- apply ---
     let oid = apply_reconcile(repo, &plan, message.as_deref(), "reconciler", now())?;
     crate::journal::record(
         repo,
@@ -518,7 +576,7 @@ pub fn reconcile(
         now(),
     )?;
     println!(
-        "reconciled [{}] into '{}'  ->  {}",
+        "\nmerged [{}] into '{}'  ->  {}",
         plan.sources.join(", "),
         into,
         short(&oid)

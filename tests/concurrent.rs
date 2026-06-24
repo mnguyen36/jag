@@ -51,8 +51,8 @@ fn concurrent_agents_share_one_folder() {
     assert!(jag(&dir, Some("bob"), &["add", "bob.txt"]).1);
     assert!(jag(&dir, Some("bob"), &["commit", "-m", "bob work"]).1);
 
-    // Non-overlapping work reconciles automatically.
-    let (out, ok) = jag(&dir, None, &["reconcile"]);
+    // Non-overlapping work reconciles automatically (--yes skips the prompt).
+    let (out, ok) = jag(&dir, None, &["reconcile", "--yes"]);
     assert!(ok, "reconcile should succeed for disjoint work: {out}");
 
     assert!(jag(&dir, None, &["checkout", "main"]).1);

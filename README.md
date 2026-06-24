@@ -59,8 +59,8 @@ jag lane list                 lanes and their tips
 jag lane new <name>           create a lane from a base
 jag checkout <lane>           materialize a lane into the shared working tree
 
-jag reconcile [--into main]   merge agent lanes; auto-resolves disjoint work
-jag merge                     alias for reconcile
+jag merge [lanes...]          preview the merge into main, then confirm (-y to skip)
+jag reconcile [--into main]   same as merge (lower-level name)
 jag contention                paths multiple agents/lanes changed differently
 
 jag serve [--addr H:P]        serve this repo over HTTP for dl/fetch/push
