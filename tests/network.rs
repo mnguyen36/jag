@@ -140,3 +140,38 @@ fn diverged_push_is_rejected() {
 
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn push_to_a_slashed_lane_name() {
+    let root = fresh("slashed");
+    let server = root.join("server");
+    fs::create_dir_all(&server).unwrap();
+    assert!(jag(&server, &["init"]).1);
+    fs::write(server.join("a.txt"), "base\n").unwrap();
+    assert!(jag(&server, &["add", "a.txt"]).1);
+    assert!(jag(&server, &["commit", "-m", "base"]).1);
+
+    let (_srv, url) = start_server(&server);
+
+    assert!(jag(&root, &["dl", &url, "c"]).1);
+    let c = root.join("c");
+
+    // Namespaced lane (contains '/'), like git's feature/x.
+    assert!(jag(&c, &["lane", "new", "team/feature"]).1);
+    assert!(jag(&c, &["checkout", "team/feature"]).1);
+    fs::write(c.join("a.txt"), "feature\n").unwrap();
+
+    // Before the routing fix this 404'd on POST /ref/team/feature.
+    let (out, ok) = jag(&c, &["push"]);
+    assert!(ok, "push to a slashed lane should succeed: {out}");
+
+    // A fresh clone sees the slashed lane the server now advertises.
+    assert!(jag(&root, &["dl", &url, "c2"]).1);
+    let (lanes, _) = jag(&root.join("c2"), &["lane", "list"]);
+    assert!(
+        lanes.contains("team/feature"),
+        "server should advertise the slashed lane: {lanes}"
+    );
+
+    let _ = fs::remove_dir_all(&root);
+}

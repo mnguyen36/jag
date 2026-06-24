@@ -81,7 +81,11 @@ fn handle(repo: &Repo, ref_lock: &Mutex<()>, mut req: Request) -> std::io::Resul
             Ok(b) => (200, b),
             Err(e) => (400, e.to_string().into_bytes()),
         },
-        (Method::Post, ["ref", lane]) => update_ref(repo, ref_lock, lane, &body),
+        // Lane names may contain '/' (e.g. "minh/newlane"), which splits into
+        // several path segments — rejoin everything after "ref".
+        (Method::Post, ["ref", lane_parts @ ..]) if !lane_parts.is_empty() => {
+            update_ref(repo, ref_lock, &lane_parts.join("/"), &body)
+        }
         _ => (404, b"not found".to_vec()),
     };
 
