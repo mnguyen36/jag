@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use serde_json::{json, Value};
 
 use crate::agent::list_agents;
@@ -265,4 +265,44 @@ pub fn commit_diff(repo: &Repo, oid: &str) -> Result<Value> {
         "parents": c.parents,
         "files": files,
     }))
+}
+
+/// The list of files at the tip of `main`, sorted by path.
+pub fn list_files(repo: &Repo) -> Result<Value> {
+    let tip = match crate::refs::read_lane(repo, "main")? {
+        Some(t) => t,
+        None => return Ok(json!({ "files": [] })),
+    };
+    let tree = crate::commit::read_commit(repo, &tip)?.tree;
+    let entries = flatten_tree(repo, &tree, "")?;
+    let files: Vec<Value> = entries
+        .keys()
+        .map(|p| json!({ "path": p }))
+        .collect();
+    Ok(json!({ "files": files }))
+}
+
+/// A single file's contents at the tip of `main`. Binary files are flagged
+/// rather than returned; text is UTF-8 (lossy) and capped to ~20000 chars.
+pub fn file_content(repo: &Repo, path: &str) -> Result<Value> {
+    let tip = match crate::refs::read_lane(repo, "main")? {
+        Some(t) => t,
+        None => bail!("no such file"),
+    };
+    let tree = crate::commit::read_commit(repo, &tip)?.tree;
+    let entries = flatten_tree(repo, &tree, "")?;
+    let (_, oid) = match entries.get(path) {
+        Some(e) => e,
+        None => bail!("no such file"),
+    };
+    let (_, data) = crate::objects::read_object(repo, oid)?;
+    if data.iter().take(8000).any(|&b| b == 0) {
+        return Ok(json!({ "path": path, "binary": true, "content": "" }));
+    }
+    let mut content = String::from_utf8_lossy(&data).into_owned();
+    if content.chars().count() > 20000 {
+        let truncated: String = content.chars().take(20000).collect();
+        content = format!("{truncated}\n… truncated …");
+    }
+    Ok(json!({ "path": path, "binary": false, "content": content }))
 }

@@ -133,6 +133,19 @@
   .agents .ln { font-family:var(--mono); font-size:11px; color:var(--muted); margin-left:auto; }
   .agents .ln b { color:var(--text); }
 
+  /* files */
+  .files .list { max-height:340px; overflow:auto; }
+  .files .f { display:block; width:100%; text-align:left; background:transparent; border:0;
+              border-top:1px solid var(--line); padding:8px 16px; cursor:pointer;
+              font-family:var(--mono); font-size:12.5px; color:var(--text);
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .files .f:first-child { border-top:0; }
+  .files .f:hover { background:var(--panel-2); color:var(--amber); }
+  .files .f:focus-visible { outline-offset:-2px; }
+  .fcontent { font-family:var(--mono); font-size:12.5px; line-height:1.55;
+              white-space:pre; padding:14px 20px; margin:0; overflow-x:auto; color:var(--text); }
+  .fcontent.bin { color:var(--dim); white-space:normal; }
+
   .sub-h { font-family:var(--mono); font-size:11px; color:var(--muted);
            text-transform:uppercase; letter-spacing:.2em; padding:13px 16px;
            border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px; }
@@ -215,6 +228,9 @@
       <section class="panel agents" id="agents"></section>
     </div>
   </div>
+
+  <div class="eyebrow" style="margin-top:34px"><h2>Files</h2><div class="rule"></div></div>
+  <section class="panel files" id="files"></section>
 
   <footer class="foot">
     <span id="root">—</span>
@@ -311,6 +327,46 @@ function render(d){
     </div>`).join('') : `<div class="empty">No agents.</div>`);
 }
 
+// ---- file browser ----
+async function renderFiles(){
+  try {
+    const r = await fetch('/api/files', {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const files = d.files || [];
+    $('files').innerHTML = files.length
+      ? `<div class="list">` + files.map(f =>
+          `<button class="f" data-path="${esc(f.path)}" title="${esc(f.path)}">${esc(f.path)}</button>`
+        ).join('') + `</div>`
+      : `<div class="empty">No files on main yet.</div>`;
+  } catch(e){
+    $('files').innerHTML = `<div class="empty">Could not load files — ${esc(e.message)}</div>`;
+  }
+}
+
+async function openFile(path){
+  if(!path) return;
+  scrim.classList.add('open'); scrim.setAttribute('aria-hidden','false');
+  modal.innerHTML = '<div class="mmsg">loading file…</div>';
+  try {
+    const r = await fetch('/api/file/' + path.split('/').map(encodeURIComponent).join('/'), {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const body = d.binary
+      ? `<pre class="fcontent bin">binary file</pre>`
+      : `<pre class="fcontent">${esc(d.content)}</pre>`;
+    modal.innerHTML = `
+      <div class="mh">
+        <div><div class="sha">${esc(d.path)}</div>
+             <div class="mmeta">main · file</div></div>
+        <button class="x" onclick="closeDiff()">esc ✕</button>
+      </div>
+      ${body}`;
+  } catch(e){
+    modal.innerHTML = '<div class="mmsg">could not load file — ' + esc(e.message) + '</div>';
+  }
+}
+
 // ---- diff viewer ----
 const scrim = $('scrim'), modal = $('modal');
 const lineClass = (l) => l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctx';
@@ -353,6 +409,8 @@ function renderDiff(d){
 document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-oid]');
   if(el){ openDiff(el.getAttribute('data-oid')); return; }
+  const fl = e.target.closest('[data-path]');
+  if(fl){ openFile(fl.getAttribute('data-path')); return; }
   if(e.target === scrim) closeDiff();
 });
 document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeDiff(); });
@@ -363,6 +421,7 @@ async function tick(){
     const r = await fetch('/api/overview', {cache:'no-store'});
     if(!r.ok) throw new Error('HTTP ' + r.status);
     render(await r.json());
+    renderFiles();
     fails = 0;
     $('dot').style.background = 'var(--amber)';
     $('status').textContent = 'connected';
