@@ -10,6 +10,7 @@ mod commands;
 mod commit;
 mod graph;
 mod index;
+mod journal;
 mod objects;
 mod protocol;
 mod reconcile;
@@ -83,6 +84,7 @@ enum Command {
     /// Materialize a lane into the shared working tree for this agent
     Checkout { lane: String },
     /// Merge concurrent lanes, auto-resolving non-overlapping work
+    #[command(visible_alias = "merge")]
     Reconcile {
         /// Target lane to reconcile into
         #[arg(long, default_value = "main")]
@@ -111,13 +113,21 @@ enum Command {
         #[arg(default_value = "origin")]
         remote: String,
     },
-    /// Upload a lane to a remote
+    /// Save everything: stage all changes, commit, and push to the remote
     Push {
-        #[arg(default_value = "origin")]
+        /// Commit message (default: an auto timestamped checkpoint)
+        #[arg(short = 'm', long)]
+        message: Option<String>,
+        #[arg(long, default_value = "origin")]
         remote: String,
-        /// Lane to push (default: the current agent's lane)
-        lane: Option<String>,
+        /// Commit locally only; don't push
+        #[arg(long)]
+        local: bool,
     },
+    /// Undo the last change on the current lane (restores the working tree)
+    Undo,
+    /// Reapply the last undone change
+    Redo,
     /// Serve this repository over HTTP for clone/fetch/push
     Serve {
         #[arg(long, default_value = "127.0.0.1:9418")]
@@ -219,7 +229,13 @@ fn run(cli: Cli) -> Result<()> {
             RemoteCmd::Remove { name } => commands::remote_remove(&repo, &name),
         },
         Command::Fetch { remote } => commands::fetch(&repo, &remote),
-        Command::Push { remote, lane } => commands::push(&repo, &remote, lane),
+        Command::Push {
+            message,
+            remote,
+            local,
+        } => commands::push_all(&repo, message, &remote, local),
+        Command::Undo => commands::undo(&repo),
+        Command::Redo => commands::redo(&repo),
         Command::Serve { addr, threads } => commands::serve(&repo, &addr, threads),
     }
 }

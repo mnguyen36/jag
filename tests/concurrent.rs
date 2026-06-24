@@ -63,6 +63,31 @@ fn concurrent_agents_share_one_folder() {
 }
 
 #[test]
+fn undo_and_redo_move_the_lane_and_working_tree() {
+    let dir = fresh("undoredo");
+    assert!(jag(&dir, None, &["init"]).1);
+
+    fs::write(dir.join("f.txt"), "v1\n").unwrap();
+    assert!(jag(&dir, None, &["add", "f.txt"]).1);
+    assert!(jag(&dir, None, &["commit", "-m", "v1"]).1);
+
+    fs::write(dir.join("f.txt"), "v2\n").unwrap();
+    assert!(jag(&dir, None, &["add", "f.txt"]).1);
+    assert!(jag(&dir, None, &["commit", "-m", "v2"]).1);
+    assert_eq!(fs::read_to_string(dir.join("f.txt")).unwrap(), "v2\n");
+
+    // undo restores both the lane tip and the working tree to v1.
+    assert!(jag(&dir, None, &["undo"]).1);
+    assert_eq!(fs::read_to_string(dir.join("f.txt")).unwrap(), "v1\n");
+
+    // redo reapplies v2.
+    assert!(jag(&dir, None, &["redo"]).1);
+    assert_eq!(fs::read_to_string(dir.join("f.txt")).unwrap(), "v2\n");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn overlapping_edits_are_flagged_as_contention() {
     let dir = base_repo("contention");
 

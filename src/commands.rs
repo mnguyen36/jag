@@ -146,6 +146,10 @@ pub fn commit(repo: &Repo, message: &str) -> Result<()> {
         Some(l) => write_lane(repo, l, &oid)?,
         None => write_head(repo, &oid, Some(&agent))?,
     }
+    if let Some(l) = &lane {
+        let first = message.lines().next().unwrap_or("");
+        crate::journal::record(repo, l, &oid, &format!("commit: {first}"), now())?;
+    }
     let lane_label = lane.unwrap_or_else(|| "detached".to_string());
     println!(
         "[{} {} {}] {}",
@@ -408,20 +412,16 @@ pub fn lane_new(repo: &Repo, name: &str, base: &str) -> Result<()> {
     Ok(())
 }
 
-// --- checkout ------------------------------------------------------------
-pub fn checkout(repo: &Repo, lane: &str) -> Result<()> {
-    let agent = repo.agent();
-    let tip = read_lane(repo, lane)?;
-    write_head(repo, &format!("ref: refs/lanes/{lane}"), Some(&agent))?;
-
-    let tree = commit_tree(repo, tip.as_deref())?;
+// --- checkout / undo / redo ----------------------------------------------
+/// Point an agent's working tree at `tip`: write its blobs, drop files the tip
+/// doesn't have, and reseed the index. Shared by checkout, undo, and redo.
+fn materialize_tip(repo: &Repo, agent: &str, tip: Option<&str>) -> Result<usize> {
+    let tree = commit_tree(repo, tip)?;
     let new_paths = match &tree {
         Some(t) => flatten_tree(repo, t, "")?,
         None => BTreeMap::new(),
     };
-
-    // remove files this agent tracked but the target lane doesn't have
-    let idx = Index::load(repo, Some(&agent))?;
+    let idx = Index::load(repo, Some(agent))?;
     for path in idx.entries.keys() {
         if !new_paths.contains_key(path) {
             let _ = fs::remove_file(repo.root.join(path));
@@ -430,11 +430,51 @@ pub fn checkout(repo: &Repo, lane: &str) -> Result<()> {
     for (path, (_, oid)) in &new_paths {
         materialize(repo, oid, &repo.root.join(path))?;
     }
-    seed_index_from_tree(repo, &agent, tree.as_deref())?;
-    println!(
-        "agent '{agent}' switched to lane '{lane}' ({} file(s) materialized)",
-        new_paths.len()
-    );
+    seed_index_from_tree(repo, agent, tree.as_deref())?;
+    Ok(new_paths.len())
+}
+
+pub fn checkout(repo: &Repo, lane: &str) -> Result<()> {
+    let agent = repo.agent();
+    let tip = read_lane(repo, lane)?;
+    write_head(repo, &format!("ref: refs/lanes/{lane}"), Some(&agent))?;
+    let n = materialize_tip(repo, &agent, tip.as_deref())?;
+    println!("agent '{agent}' switched to lane '{lane}' ({n} file(s) materialized)");
+    Ok(())
+}
+
+pub fn undo(repo: &Repo) -> Result<()> {
+    let agent = repo.agent();
+    let lane = current_lane(repo, Some(&agent))?
+        .ok_or_else(|| anyhow::anyhow!("current agent is detached; nothing to undo"))?;
+    match crate::journal::undo(repo, &lane)? {
+        None => println!("nothing to undo on lane '{lane}'"),
+        Some(step) => {
+            write_lane(repo, &lane, &step.new_tip)?;
+            let n = materialize_tip(repo, &agent, Some(&step.new_tip))?;
+            println!("undid: {}", step.label);
+            println!(
+                "lane '{lane}' -> {} ({n} file(s));  reapply with `jag redo`",
+                short(&step.new_tip)
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn redo(repo: &Repo) -> Result<()> {
+    let agent = repo.agent();
+    let lane = current_lane(repo, Some(&agent))?
+        .ok_or_else(|| anyhow::anyhow!("current agent is detached; nothing to redo"))?;
+    match crate::journal::redo(repo, &lane)? {
+        None => println!("nothing to redo on lane '{lane}'"),
+        Some(step) => {
+            write_lane(repo, &lane, &step.new_tip)?;
+            let n = materialize_tip(repo, &agent, Some(&step.new_tip))?;
+            println!("redid: {}", step.label);
+            println!("lane '{lane}' -> {} ({n} file(s))", short(&step.new_tip));
+        }
+    }
     Ok(())
 }
 
@@ -470,6 +510,13 @@ pub fn reconcile(
         bail!("unresolved contention");
     }
     let oid = apply_reconcile(repo, &plan, message.as_deref(), "reconciler", now())?;
+    crate::journal::record(
+        repo,
+        into,
+        &oid,
+        &format!("reconcile {}", plan.sources.join(", ")),
+        now(),
+    )?;
     println!(
         "reconciled [{}] into '{}'  ->  {}",
         plan.sources.join(", "),
@@ -578,7 +625,7 @@ pub fn fetch(repo: &Repo, remote: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn push(repo: &Repo, remote: &str, lane: Option<String>) -> Result<()> {
+fn push(repo: &Repo, remote: &str, lane: Option<String>) -> Result<()> {
     let url = get_remote(repo, remote)?.ok_or_else(|| anyhow_no_remote(remote))?;
     let lane = match lane {
         Some(l) => l,
@@ -586,6 +633,25 @@ pub fn push(repo: &Repo, remote: &str, lane: Option<String>) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("current agent is detached; specify a lane to push"))?,
     };
     crate::sync::push(repo, &url, &lane)
+}
+
+/// `jag push` — the one-step "save everything": stage all changes, commit, and
+/// push to the remote (unless `--local`, or there is no remote). Replaces the
+/// add → commit → push trio with a single command.
+pub fn push_all(repo: &Repo, message: Option<String>, remote: &str, local: bool) -> Result<()> {
+    add(repo, &[".".to_string()])?;
+    let msg = message.unwrap_or_else(|| format!("checkpoint {}", fmt_time(now())));
+    commit(repo, &msg)?;
+    if local {
+        return Ok(());
+    }
+    match get_remote(repo, remote)? {
+        Some(_) => push(repo, remote, None)?,
+        None => println!(
+            "(local only — no '{remote}' remote; add one with `jag remote add {remote} <url>`)"
+        ),
+    }
+    Ok(())
 }
 
 pub fn serve(repo: &Repo, addr: &str, threads: usize) -> Result<()> {

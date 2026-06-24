@@ -38,10 +38,14 @@ JAG tracks who changed what and reconciles them.
 ## Commands
 
 ```
+jag push [-m <msg>]           SAVE EVERYTHING: stage all + commit + push to origin
+jag undo                      step the current lane back one change (restores files)
+jag redo                      reapply the last undone change
+
 jag init                      initialize a repository
 jag status                    status for the current agent (+ concurrent agents)
-jag add <paths...>            stage into the current agent's index
-jag commit -m <msg>           commit on the current agent's lane
+jag add <paths...>            stage into the current agent's index (low-level)
+jag commit -m <msg>           commit on the current agent's lane (low-level)
 jag log [-n N]                history for the current lane
 jag diff [--staged]           index vs working tree (or HEAD vs index)
 jag cat-file <oid>            inspect an object (blobs/trees/commits are text)
@@ -56,6 +60,7 @@ jag lane new <name>           create a lane from a base
 jag checkout <lane>           materialize a lane into the shared working tree
 
 jag reconcile [--into main]   merge agent lanes; auto-resolves disjoint work
+jag merge                     alias for reconcile
 jag contention                paths multiple agents/lanes changed differently
 
 jag serve [--addr H:P]        serve this repo over HTTP for clone/fetch/push
@@ -63,8 +68,27 @@ jag clone <url> [dir]         clone from a jag server
 jag remote add <name> <url>   register a remote (clone adds 'origin')
 jag remote list | remove      manage remotes
 jag fetch [remote]            download objects + lanes (fast-forwards locals)
-jag push [remote] [lane]      upload a lane (default: current agent's lane)
 ```
+
+## Everyday flow
+
+The whole save → share loop is one command. Edit files, then:
+
+```
+$ jag push -m "did the thing"      # stage all + commit + push to origin
+```
+
+Changed your mind?
+
+```
+$ jag undo      # back one step — lane tip and working files both revert
+$ jag redo      # forward again
+```
+
+`undo`/`redo` are a single pointer walking the lane's history (like an editor),
+not git's `reset`/`revert`/`reflog`. Merging concurrent agents is `jag reconcile`
+(aka `jag merge`): disjoint work auto-combines, real collisions surface as
+`contention` instead of halting everything.
 
 Select the acting agent with `--agent <name>` or the `JAG_AGENT` environment
 variable; otherwise the configured default (`main`) is used.

@@ -91,7 +91,7 @@ fn clone_then_push_roundtrip() {
     fs::write(client.join("a.txt"), "one\ntwo\n").unwrap();
     assert!(jag(&client, &["add", "a.txt"]).1);
     assert!(jag(&client, &["commit", "-m", "client edit"]).1);
-    let (out, ok) = jag(&client, &["push", "origin", "main"]);
+    let (out, ok) = jag(&client, &["push"]);
     assert!(ok, "push should succeed: {out}");
 
     // A second clone observes the pushed change — proof the server advanced.
@@ -125,13 +125,13 @@ fn diverged_push_is_rejected() {
     fs::write(c1.join("a.txt"), "c1\n").unwrap();
     assert!(jag(&c1, &["add", "a.txt"]).1);
     assert!(jag(&c1, &["commit", "-m", "c1"]).1);
-    assert!(jag(&c1, &["push", "origin", "main"]).1);
+    assert!(jag(&c1, &["push"]).1);
 
     // c2 (still at base) edits and pushes — must be rejected as non-fast-forward.
     fs::write(c2.join("a.txt"), "c2\n").unwrap();
     assert!(jag(&c2, &["add", "a.txt"]).1);
     assert!(jag(&c2, &["commit", "-m", "c2"]).1);
-    let (out, ok) = jag(&c2, &["push", "origin", "main"]);
+    let (out, ok) = jag(&c2, &["push"]);
     assert!(!ok, "diverged push must fail");
     assert!(
         out.contains("reject") || out.contains("fast-forward"),

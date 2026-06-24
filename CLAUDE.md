@@ -103,6 +103,19 @@ off). One `jag serve` process serves one repo.
 Note: `refs::list_lanes` is recursive so remote-tracking lanes (`origin/main`)
 are listed; `reconcile` excludes `/`-containing lanes from its default sources.
 
+### Ergonomics: one-step push + undo/redo
+- `jag push` (`commands::push_all`) is the everyday "save everything": stage all
+  → commit → push to `origin` (skipped with `--local` or when no remote). The
+  low-level `add`/`commit`/`fetch`/lane-`push` still exist beneath it.
+- `journal.rs` is a per-lane undo timeline. `commit` and `reconcile` append the
+  new tip; `jag undo`/`jag redo` move a single pointer along it and re-materialize
+  the working tree (`materialize_tip`, shared with `checkout`). A new change
+  after an undo truncates the redo tail — editor semantics, not git reflog.
+  Scope is **local**: undo rewinds your lane; it does not rewind a remote (push
+  stays fast-forward-only), so undo-then-push of an already-pushed tip is a
+  non-fast-forward and is rejected by design.
+- `jag merge` is a visible alias for `reconcile`.
+
 ### CLI flow
 `main.rs` (clap) parses, resolves the acting agent (`--agent` > `JAG_AGENT` >
 config default), then dispatches to a handler in `commands.rs`. `init` and
