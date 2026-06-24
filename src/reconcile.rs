@@ -47,9 +47,11 @@ fn lane_paths(
 pub fn plan_reconcile(repo: &Repo, into: &str, sources: Vec<String>) -> Result<ReconcilePlan> {
     let (base_paths, base_tip) = lane_paths(repo, into)?;
     let sources: Vec<String> = if sources.is_empty() {
+        // Default to local agent lanes only; remote-tracking lanes (which carry
+        // a `/` in their name) must be named explicitly.
         list_lanes(repo)?
             .into_keys()
-            .filter(|l| l != into)
+            .filter(|l| l != into && !l.contains('/'))
             .collect()
     } else {
         sources

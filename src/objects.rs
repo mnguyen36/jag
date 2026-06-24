@@ -103,3 +103,50 @@ fn hex(bytes: &[u8]) -> String {
     }
     s
 }
+
+/// Whether an object is present in the store. Used by sync negotiation.
+pub fn object_exists(repo: &Repo, oid: &str) -> bool {
+    obj_path(repo, oid).exists()
+}
+
+/// Read an object's raw on-disk (compressed) bytes — exactly what the wire
+/// transfers, since the store is content-addressed identically on both ends.
+pub fn read_raw(repo: &Repo, oid: &str) -> Result<Option<Vec<u8>>> {
+    let path = obj_path(repo, oid);
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(fs::read(&path)?))
+}
+
+/// Write raw (compressed) object bytes received over the wire, after verifying
+/// the decompressed payload actually hashes to `oid`. Atomic via temp+rename so
+/// concurrent writers never observe a partial object.
+pub fn write_raw(repo: &Repo, oid: &str, compressed: &[u8]) -> Result<()> {
+    let mut dec = ZlibDecoder::new(compressed);
+    let mut raw = Vec::new();
+    dec.read_to_end(&mut raw)?;
+    let mut hasher = Sha256::new();
+    hasher.update(&raw);
+    let got = hex(&hasher.finalize());
+    if got != oid {
+        bail!("object hash mismatch: expected {oid}, got {got}");
+    }
+
+    let path = obj_path(repo, oid);
+    if path.exists() {
+        return Ok(());
+    }
+    let parent = path
+        .parent()
+        .context("object path has no parent directory")?;
+    fs::create_dir_all(parent)?;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = parent.join(format!(".tmp-{}-{}", &oid[..8.min(oid.len())], nanos));
+    fs::write(&tmp, compressed)?;
+    fs::rename(&tmp, &path)?;
+    Ok(())
+}

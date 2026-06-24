@@ -82,10 +82,31 @@ That sharing is the whole point: one folder, many workers.
 - `agent.rs` — `create_agent` forks the lane and seeds the index from the lane
   tip tree (so the index mirrors HEAD, Git-style).
 
+### Networking / sync (local jag server)
+Plain HTTP, blocking, single binary (`tiny_http` server + `ureq` client, TLS
+off). One `jag serve` process serves one repo.
+- `protocol.rs` — JSON wire types. Endpoints: `GET /refs`, `GET /closure/<oid>`,
+  `GET|POST /object/<oid>`, `POST /missing`, `POST /ref/<lane>`.
+- `objects.rs` — `read_raw`/`write_raw` move the **on-disk compressed bytes**
+  verbatim (the store is content-addressed identically on both ends);
+  `write_raw` re-hashes before storing (integrity) and is atomic via temp+rename.
+- `graph.rs` — `reachable` (object closure from tips) and `is_ancestor`
+  (fast-forward checks).
+- `server.rs` — N worker threads share the listener; object writes are
+  idempotent, lane updates serialized behind a `Mutex` with an FF/contention
+  rule (non-fast-forward → HTTP 409).
+- `client.rs` / `sync.rs` — push computes its closure, asks `/missing`, uploads
+  the gap, then `/ref`; fetch pulls each lane's closure and fast-forwards local
+  lanes (a diverged lane is imported as `<remote>/<lane>` for reconcile).
+- `remote.rs` — remotes stored as `name -> url` JSON in `.jag/remotes`.
+
+Note: `refs::list_lanes` is recursive so remote-tracking lanes (`origin/main`)
+are listed; `reconcile` excludes `/`-containing lanes from its default sources.
+
 ### CLI flow
 `main.rs` (clap) parses, resolves the acting agent (`--agent` > `JAG_AGENT` >
-config default), then dispatches to a handler in `commands.rs`. `init` is the
-only command that runs without an existing repo.
+config default), then dispatches to a handler in `commands.rs`. `init` and
+`clone` are the only commands that run without an existing repo.
 
 ## Conventions / gotchas
 - Paths are stored with `/` separators everywhere (normalized on the way in).

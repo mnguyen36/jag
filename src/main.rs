@@ -5,14 +5,20 @@
 //! which concurrent agent the command acts as inside the shared folder.
 
 mod agent;
+mod client;
 mod commands;
 mod commit;
+mod graph;
 mod index;
 mod objects;
+mod protocol;
 mod reconcile;
 mod refs;
+mod remote;
 mod repo;
+mod server;
 mod status;
+mod sync;
 mod tree;
 mod worktree;
 
@@ -88,6 +94,47 @@ enum Command {
     },
     /// Show paths multiple agents/lanes have changed (merge hot-spots)
     Contention,
+    /// Manage remotes (named jag server URLs)
+    Remote {
+        #[command(subcommand)]
+        action: RemoteCmd,
+    },
+    /// Clone a repository from a jag server URL
+    Clone {
+        /// Server URL, e.g. http://127.0.0.1:9418
+        url: String,
+        /// Destination directory (default: jag-clone)
+        dir: Option<String>,
+    },
+    /// Download objects and lanes from a remote
+    Fetch {
+        #[arg(default_value = "origin")]
+        remote: String,
+    },
+    /// Upload a lane to a remote
+    Push {
+        #[arg(default_value = "origin")]
+        remote: String,
+        /// Lane to push (default: the current agent's lane)
+        lane: Option<String>,
+    },
+    /// Serve this repository over HTTP for clone/fetch/push
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:9418")]
+        addr: String,
+        #[arg(long, default_value_t = 4)]
+        threads: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum RemoteCmd {
+    /// Add or update a remote
+    Add { name: String, url: String },
+    /// List remotes
+    List,
+    /// Remove a remote
+    Remove { name: String },
 }
 
 #[derive(Subcommand)]
@@ -130,14 +177,17 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    // init is the only command that runs without an existing repository.
-    if let Command::Init = cli.command {
-        return commands::init(std::env::current_dir()?);
+    // init and clone are the only commands that run without an existing repo.
+    match &cli.command {
+        Command::Init => return commands::init(std::env::current_dir()?),
+        Command::Clone { url, dir } => return commands::clone(url, dir.clone()),
+        _ => {}
     }
 
     let repo = Repo::find(None, cli.agent.clone())?;
     match cli.command {
         Command::Init => unreachable!(),
+        Command::Clone { .. } => unreachable!(),
         Command::Status => commands::status(&repo),
         Command::Add { paths } => commands::add(&repo, &paths),
         Command::Commit { message } => commands::commit(&repo, &message),
@@ -163,5 +213,13 @@ fn run(cli: Cli) -> Result<()> {
             lanes,
         } => commands::reconcile(&repo, &into, message, lanes),
         Command::Contention => commands::contention(&repo),
+        Command::Remote { action } => match action {
+            RemoteCmd::Add { name, url } => commands::remote_add(&repo, &name, &url),
+            RemoteCmd::List => commands::remote_list(&repo),
+            RemoteCmd::Remove { name } => commands::remote_remove(&repo, &name),
+        },
+        Command::Fetch { remote } => commands::fetch(&repo, &remote),
+        Command::Push { remote, lane } => commands::push(&repo, &remote, lane),
+        Command::Serve { addr, threads } => commands::serve(&repo, &addr, threads),
     }
 }

@@ -57,10 +57,37 @@ jag checkout <lane>           materialize a lane into the shared working tree
 
 jag reconcile [--into main]   merge agent lanes; auto-resolves disjoint work
 jag contention                paths multiple agents/lanes changed differently
+
+jag serve [--addr H:P]        serve this repo over HTTP for clone/fetch/push
+jag clone <url> [dir]         clone from a jag server
+jag remote add <name> <url>   register a remote (clone adds 'origin')
+jag remote list | remove      manage remotes
+jag fetch [remote]            download objects + lanes (fast-forwards locals)
+jag push [remote] [lane]      upload a lane (default: current agent's lane)
 ```
 
 Select the acting agent with `--agent <name>` or the `JAG_AGENT` environment
 variable; otherwise the configured default (`main`) is used.
+
+## Networking (local jag server)
+
+JAG syncs over plain HTTP. One `jag serve` process serves one repository.
+
+```
+# machine/terminal A — host a repo
+$ cd my-repo && jag serve --addr 127.0.0.1:9418
+
+# machine/terminal B — clone, change, push back
+$ jag clone http://127.0.0.1:9418 my-clone
+$ cd my-clone
+$ echo hi >> file.txt && jag add file.txt && jag commit -m "edit"
+$ jag push origin main
+```
+
+Push only fast-forwards: if the remote lane has diverged the push is **rejected**
+(non-fast-forward) — `jag fetch` then `jag reconcile`, and push again. Sync is
+object-negotiated (only missing objects move) and integrity-checked (received
+objects are re-hashed before they're stored).
 
 ## Install
 
@@ -76,6 +103,7 @@ See [CLAUDE.md](CLAUDE.md) for the architecture and development workflow.
 ## Status
 
 Early but working: content-addressable store, per-agent index/HEAD/lanes,
-concurrent commits in one folder, path-level reconcile, and contention
-detection are implemented and covered by end-to-end tests. Line-level merge
-resolution is the next milestone.
+concurrent commits in one folder, path-level reconcile, contention detection,
+and HTTP sync (`serve`/`clone`/`fetch`/`push` with object negotiation and
+fast-forward rules) are implemented and covered by end-to-end tests. Line-level
+merge resolution is the next milestone.

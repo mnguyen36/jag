@@ -14,6 +14,7 @@ use crate::index::{seed_index_from_tree, Index};
 use crate::objects::read_object;
 use crate::reconcile::{apply_reconcile, find_contention, plan_reconcile};
 use crate::refs::{current_lane, head_commit, list_lanes, read_lane, write_head, write_lane};
+use crate::remote::{get_remote, load_remotes, save_remotes};
 use crate::repo::{Config, Repo, JAG_DIR};
 use crate::status::compute_status;
 use crate::tree::flatten_tree;
@@ -496,6 +497,103 @@ pub fn contention(repo: &Repo) -> Result<()> {
         println!("        {}", parts.join("  "));
     }
     Ok(())
+}
+
+// --- remote --------------------------------------------------------------
+pub fn remote_add(repo: &Repo, name: &str, url: &str) -> Result<()> {
+    let mut remotes = load_remotes(repo)?;
+    remotes.insert(name.to_string(), url.to_string());
+    save_remotes(repo, &remotes)?;
+    println!("added remote '{name}' -> {url}");
+    Ok(())
+}
+
+pub fn remote_list(repo: &Repo) -> Result<()> {
+    let remotes = load_remotes(repo)?;
+    if remotes.is_empty() {
+        println!("no remotes");
+        return Ok(());
+    }
+    for (name, url) in remotes {
+        println!("{name}\t{url}");
+    }
+    Ok(())
+}
+
+pub fn remote_remove(repo: &Repo, name: &str) -> Result<()> {
+    let mut remotes = load_remotes(repo)?;
+    if remotes.remove(name).is_none() {
+        bail!("no such remote: {name}");
+    }
+    save_remotes(repo, &remotes)?;
+    println!("removed remote '{name}'");
+    Ok(())
+}
+
+// --- clone / fetch / push / serve ----------------------------------------
+pub fn clone(url: &str, dir: Option<String>) -> Result<()> {
+    let dirname = dir.unwrap_or_else(|| "jag-clone".to_string());
+    let dest = std::env::current_dir()?.join(&dirname);
+    if dest.exists() && fs::read_dir(&dest)?.next().is_some() {
+        bail!("destination '{dirname}' exists and is not empty");
+    }
+    let jagdir = dest.join(JAG_DIR);
+    fs::create_dir_all(jagdir.join("objects"))?;
+    fs::create_dir_all(jagdir.join("refs").join("lanes"))?;
+    fs::create_dir_all(jagdir.join("agents"))?;
+    let dest = dest.canonicalize().unwrap_or(dest);
+
+    let repo = Repo::new(dest.clone(), None);
+    repo.write_config(&Config {
+        default_agent: "main".to_string(),
+        default_lane: "main".to_string(),
+        version: 1,
+    })?;
+    let mut remotes = BTreeMap::new();
+    remotes.insert("origin".to_string(), url.to_string());
+    save_remotes(&repo, &remotes)?;
+
+    println!("cloning {url} into '{dirname}' ...");
+    for r in crate::sync::fetch(&repo, "origin", url)? {
+        println!("  {}: {} {}", r.lane, r.status, short(&r.tip));
+    }
+
+    // Establish the default agent and materialize main into the working tree.
+    create_agent(&repo, "main", Some("main"), "main", now())?;
+    checkout(&repo, "main")?;
+    println!("cloned into {}", dest.display());
+    Ok(())
+}
+
+pub fn fetch(repo: &Repo, remote: &str) -> Result<()> {
+    let url = get_remote(repo, remote)?.ok_or_else(|| anyhow_no_remote(remote))?;
+    let results = crate::sync::fetch(repo, remote, &url)?;
+    if results.is_empty() {
+        println!("remote '{remote}' has no lanes");
+        return Ok(());
+    }
+    for r in results {
+        println!("  {}: {} {}", r.lane, r.status, short(&r.tip));
+    }
+    Ok(())
+}
+
+pub fn push(repo: &Repo, remote: &str, lane: Option<String>) -> Result<()> {
+    let url = get_remote(repo, remote)?.ok_or_else(|| anyhow_no_remote(remote))?;
+    let lane = match lane {
+        Some(l) => l,
+        None => current_lane(repo, Some(&repo.agent()))?
+            .ok_or_else(|| anyhow::anyhow!("current agent is detached; specify a lane to push"))?,
+    };
+    crate::sync::push(repo, &url, &lane)
+}
+
+pub fn serve(repo: &Repo, addr: &str, threads: usize) -> Result<()> {
+    crate::server::serve(repo, addr, threads)
+}
+
+fn anyhow_no_remote(name: &str) -> anyhow::Error {
+    anyhow::anyhow!("no such remote: {name} (add one with `jag remote add {name} <url>`)")
 }
 
 // --- time formatting (no external deps) ----------------------------------

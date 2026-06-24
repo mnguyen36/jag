@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::fs;
 
 use anyhow::Result;
+use walkdir::WalkDir;
 
 use crate::repo::Repo;
 
@@ -31,16 +32,22 @@ pub fn write_lane(repo: &Repo, lane: &str, oid: &str) -> Result<()> {
     Ok(())
 }
 
+/// All lanes, including nested remote-tracking lanes like `origin/main`. Names
+/// are relative to the lanes dir using `/` separators.
 pub fn list_lanes(repo: &Repo) -> Result<BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
     let base = repo.lanes_dir();
     if !base.is_dir() {
         return Ok(out);
     }
-    for entry in fs::read_dir(&base)? {
-        let entry = entry?;
-        if entry.file_type()?.is_file() {
-            let name = entry.file_name().to_string_lossy().to_string();
+    for entry in WalkDir::new(&base).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            let name = entry
+                .path()
+                .strip_prefix(&base)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
             if let Some(oid) = read_lane(repo, &name)? {
                 out.insert(name, oid);
             }

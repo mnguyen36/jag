@@ -20,6 +20,7 @@ pub struct Config {
     pub version: u32,
 }
 
+#[derive(Clone)]
 pub struct Repo {
     pub root: PathBuf,
     agent_override: Option<String>,
