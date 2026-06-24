@@ -720,6 +720,58 @@ fn anyhow_no_remote(name: &str) -> anyhow::Error {
     anyhow::anyhow!("no such remote: {name} (add one with `jag remote add {name} <url>`)")
 }
 
+// --- model (natural-language backend) ------------------------------------
+pub fn model_setup(model: &str, host: &str) -> Result<()> {
+    println!("Downloading model '{model}' via Ollama (this can take a minute) ...");
+    match std::process::Command::new("ollama")
+        .args(["pull", model])
+        .status()
+    {
+        Ok(s) if s.success() => {}
+        Ok(s) => bail!("`ollama pull {model}` failed (exit {:?})", s.code()),
+        Err(_) => bail!(
+            "Ollama not found on PATH.\n  \
+             Install it from https://ollama.com, then re-run `jag model setup`.\n  \
+             (Already running a server elsewhere? `jag model setup --host <url>`.)"
+        ),
+    }
+    crate::model::save(&crate::model::NlConfig {
+        enabled: true,
+        provider: "ollama".to_string(),
+        host: host.to_string(),
+        model: model.to_string(),
+    })?;
+    println!("\nNL model enabled: {model} @ {host}");
+    println!("Try:  jag what changed   |   jag do tidy things up and push");
+    Ok(())
+}
+
+pub fn model_status() -> Result<()> {
+    let cfg = crate::model::load();
+    println!("enabled:   {}", cfg.enabled);
+    println!("provider:  {}", cfg.provider);
+    println!("host:      {}", cfg.host);
+    println!("model:     {}", cfg.model);
+    println!("config:    {}", crate::model::config_path()?.display());
+    println!(
+        "reachable: {}",
+        if crate::model::reachable(&cfg) {
+            "yes"
+        } else {
+            "no (is the model server running?)"
+        }
+    );
+    Ok(())
+}
+
+pub fn model_enable(on: bool) -> Result<()> {
+    let mut cfg = crate::model::load();
+    cfg.enabled = on;
+    crate::model::save(&cfg)?;
+    println!("NL model backend {}", if on { "enabled" } else { "disabled" });
+    Ok(())
+}
+
 // --- time formatting (no external deps) ----------------------------------
 fn fmt_time(secs: i64) -> String {
     let days = secs.div_euclid(86400);

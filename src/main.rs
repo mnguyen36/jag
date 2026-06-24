@@ -11,6 +11,8 @@ mod commit;
 mod graph;
 mod index;
 mod journal;
+mod model;
+mod nl;
 mod objects;
 mod protocol;
 mod reconcile;
@@ -139,6 +141,34 @@ enum Command {
         #[arg(long, default_value_t = 4)]
         threads: usize,
     },
+    /// Run a plain-English request, e.g. `jag do commit my changes and push`
+    #[command(name = "do")]
+    Do {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        words: Vec<String>,
+    },
+    /// Configure the optional local-LLM backend for `jag <sentence>`
+    Model {
+        #[command(subcommand)]
+        action: ModelCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ModelCmd {
+    /// Download a lightweight model via Ollama and enable the NL backend
+    Setup {
+        #[arg(long, default_value = "qwen2.5:0.5b")]
+        model: String,
+        #[arg(long, default_value = "http://localhost:11434")]
+        host: String,
+    },
+    /// Show the NL model configuration and whether it's reachable
+    Status,
+    /// Enable the configured model
+    On,
+    /// Disable the model (use only the built-in matcher)
+    Off,
 }
 
 #[derive(Subcommand)]
@@ -184,10 +214,38 @@ enum LaneCmd {
 }
 
 fn main() {
-    if let Err(e) = run(Cli::parse()) {
-        eprintln!("jag: {e:#}");
-        std::process::exit(1);
+    let argv: Vec<String> = std::env::args().collect();
+    match Cli::try_parse_from(&argv) {
+        Ok(cli) => {
+            if let Err(e) = run(cli) {
+                eprintln!("jag: {e:#}");
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            use clap::error::ErrorKind;
+            // Let --help / --version / no-args behave normally.
+            let sentence = argv.get(1..).map(|a| a.join(" ")).unwrap_or_default();
+            match e.kind() {
+                ErrorKind::DisplayHelp
+                | ErrorKind::DisplayVersion
+                | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => e.exit(),
+                _ if sentence.trim().is_empty() => e.exit(),
+                // Anything else: treat the whole line as a natural-language request.
+                _ => {
+                    if let Err(err) = nl::run(&sentence, None) {
+                        eprintln!("jag: {err:#}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
     }
+}
+
+/// Parse and run an argv-style command line (used to execute model output).
+pub fn dispatch(args: &[String]) -> Result<()> {
+    run(Cli::try_parse_from(args)?)
 }
 
 fn run(cli: Cli) -> Result<()> {
@@ -195,6 +253,15 @@ fn run(cli: Cli) -> Result<()> {
     match &cli.command {
         Command::Init => return commands::init(std::env::current_dir()?),
         Command::Dl { url, dir } => return commands::clone(url, dir.clone()),
+        Command::Do { words } => return nl::run(&words.join(" "), cli.agent.clone()),
+        Command::Model { action } => {
+            return match action {
+                ModelCmd::Setup { model, host } => commands::model_setup(model, host),
+                ModelCmd::Status => commands::model_status(),
+                ModelCmd::On => commands::model_enable(true),
+                ModelCmd::Off => commands::model_enable(false),
+            };
+        }
         _ => {}
     }
 
@@ -202,6 +269,8 @@ fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Init => unreachable!(),
         Command::Dl { .. } => unreachable!(),
+        Command::Do { .. } => unreachable!(),
+        Command::Model { .. } => unreachable!(),
         Command::Status => commands::status(&repo),
         Command::Add { paths } => commands::add(&repo, &paths),
         Command::Commit { message } => commands::commit(&repo, &message),

@@ -38,6 +38,10 @@ JAG tracks who changed what and reconciles them.
 ## Commands
 
 ```
+jag <plain english>           e.g. `jag save my work and push`, `jag what changed`
+jag do <plain english>        same, explicit form (always natural-language)
+jag model setup               download a local model (via Ollama) for free-form NL
+
 jag push [-m <msg>]           SAVE EVERYTHING: stage all + commit + push to origin
 jag undo                      step the current lane back one change (restores files)
 jag redo                      reapply the last undone change
@@ -92,6 +96,33 @@ not git's `reset`/`revert`/`reflog`. Merging concurrent agents is `jag reconcile
 
 Select the acting agent with `--agent <name>` or the `JAG_AGENT` environment
 variable; otherwise the configured default (`main`) is used.
+
+## Plain English
+
+Anything after `jag` that isn't a known command is treated as a request:
+
+```
+$ jag save my work and push
+Interpreted as:  jag push -m "my work"
+$ jag what changed
+Interpreted as:  jag status
+$ jag do bring feature-login into main
+Interpreted as:  jag merge feature-login
+```
+
+It always prints the command it resolved to, and confirms before mutating.
+A built-in matcher handles the common phrasings instantly and offline. For
+free-form requests, attach a small **local model** (no cloud):
+
+```
+$ jag model setup            # downloads qwen2.5:0.5b via Ollama and enables it
+$ jag model status           # show config + reachability
+$ jag model off              # back to the built-in matcher only
+```
+
+The model runs locally (default Ollama at `localhost:11434`); jag asks it for a
+single command and runs that. Config lives at `~/.jag/nl.json` and belongs to
+the installed `jag`, not to any repo.
 
 ## Networking (local jag server)
 
