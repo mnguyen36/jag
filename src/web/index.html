@@ -143,6 +143,39 @@
           display:flex; gap:14px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:16px; }
   .foot .err { color:var(--vermilion); }
 
+  /* ---- clickable hashes + diff viewer ---- */
+  [data-oid]{ cursor:pointer; border-bottom:1px dotted transparent; transition:border-color .12s; }
+  [data-oid]:hover{ border-bottom-color:currentColor; }
+  .scrim{ position:fixed; inset:0; background:rgba(4,10,12,.74);
+          display:none; align-items:flex-start; justify-content:center; padding:46px 20px; z-index:50; }
+  .scrim.open{ display:flex; }
+  .modal{ width:min(940px,100%); max-height:86vh; overflow:auto; background:var(--panel);
+          border:1px solid var(--line-2); border-radius:4px; box-shadow:0 30px 90px rgba(0,0,0,.55); }
+  .mh{ position:sticky; top:0; z-index:2; background:var(--panel); border-bottom:1px solid var(--line);
+       padding:15px 20px; display:flex; gap:14px; align-items:flex-start; }
+  .mh .sha{ font-family:var(--mono); color:var(--amber); font-size:15px; font-weight:600; }
+  .mh .mmeta{ font-family:var(--mono); font-size:10.5px; color:var(--dim);
+              text-transform:uppercase; letter-spacing:.14em; margin-top:4px; }
+  .mh .x{ margin-left:auto; cursor:pointer; color:var(--muted); background:transparent;
+          border:1px solid var(--line-2); border-radius:3px; padding:4px 10px; font-family:var(--mono); font-size:11px; }
+  .mh .x:hover{ color:var(--text); border-color:var(--muted); }
+  .mmsg{ padding:14px 20px; color:var(--text); font-size:13.5px; white-space:pre-wrap;
+         border-bottom:1px solid var(--line); font-family:var(--mono); }
+  .file .fh{ position:sticky; top:54px; background:var(--panel-2); border-top:1px solid var(--line);
+             padding:9px 20px; font-family:var(--mono); font-size:12.5px; display:flex; gap:10px; align-items:center; }
+  .file .fh .st{ text-transform:uppercase; font-size:9.5px; letter-spacing:.14em; padding:2px 6px; border-radius:2px; }
+  .st.added{ color:var(--lime); border:1px solid #9cd16b55; }
+  .st.modified{ color:var(--amber); border:1px solid #f2b14b55; }
+  .st.deleted{ color:var(--vermilion); border:1px solid #e0573f55; }
+  .fh .cnt{ margin-left:auto; font-size:11.5px; }
+  .fh .cnt .a{ color:var(--lime); } .fh .cnt .d{ color:var(--vermilion); }
+  .diff{ font-family:var(--mono); font-size:12.5px; line-height:1.55; padding:4px 0; overflow-x:auto; }
+  .diff .ln{ padding:0 20px; white-space:pre; }
+  .diff .ln.add{ background:rgba(156,209,107,.09); color:#cfe9b0; }
+  .diff .ln.del{ background:rgba(224,87,63,.11); color:#f1b6ac; }
+  .diff .ln.ctx{ color:var(--muted); }
+  .diff .big{ padding:12px 20px; color:var(--dim); }
+
   @media (max-width:860px){
     .strip{grid-template-columns:repeat(2,1fr);} .cols{grid-template-columns:1fr;}
     .lane{grid-template-columns:120px 1fr;} .info{grid-column:1/-1; border-top:1px dashed var(--line);}
@@ -187,6 +220,10 @@
     <span id="root">—</span>
     <span style="margin-left:auto" id="status"></span>
   </footer>
+</div>
+
+<div class="scrim" id="scrim" aria-hidden="true">
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="commit diff"></div>
 </div>
 
 <script>
@@ -238,7 +275,7 @@ function render(d){
       <div class="name"><span class="swatch" style="color:${col};background:${col}"></span>${esc(l.name)}</div>
       <div class="track">${dots || '<span class="node tip"></span>'}</div>
       <div class="info">
-        <div class="row1">${agent}<span class="oid">${esc(l.short || '')}</span><span class="ago" style="margin-left:auto">${ago(l.time, now)}</span></div>
+        <div class="row1">${agent}<span class="oid" data-oid="${esc(l.tip || '')}" title="view diff">${esc(l.short || '')}</span><span class="ago" style="margin-left:auto">${ago(l.time, now)}</span></div>
         <div class="msg">${esc(l.message || '—')}</div>
       </div>
     </div>`;
@@ -248,7 +285,7 @@ function render(d){
   const commits = d.commits || [];
   $('log').innerHTML = commits.length ? commits.map(c => `
     <div class="item">
-      <span class="sha">${esc(c.short)}</span>
+      <span class="sha" data-oid="${esc(c.oid)}" title="view diff">${esc(c.short)}</span>
       <div class="body">
         <div class="m">${esc(c.message || '—')}</div>
         <div class="meta">${esc(c.agent || '?')} · ${esc(c.lane || '—')}${c.merge ? ' · <span class="merge-tag">merge</span>' : ''}</div>
@@ -273,6 +310,52 @@ function render(d){
       <span class="ln">lane <b>${esc(a.lane || '—')}</b> · ${esc(a.short || '·')}</span>
     </div>`).join('') : `<div class="empty">No agents.</div>`);
 }
+
+// ---- diff viewer ----
+const scrim = $('scrim'), modal = $('modal');
+const lineClass = (l) => l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctx';
+function closeDiff(){ scrim.classList.remove('open'); scrim.setAttribute('aria-hidden','true'); }
+window.closeDiff = closeDiff;
+
+async function openDiff(oid){
+  if(!oid) return;
+  scrim.classList.add('open'); scrim.setAttribute('aria-hidden','false');
+  modal.innerHTML = '<div class="mmsg">loading diff…</div>';
+  try {
+    const r = await fetch('/api/commit/' + encodeURIComponent(oid), {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    renderDiff(await r.json());
+  } catch(e){
+    modal.innerHTML = '<div class="mmsg">could not load diff — ' + esc(e.message) + '</div>';
+  }
+}
+function renderDiff(d){
+  const files = (d.files || []).map(f => {
+    const body = f.big
+      ? `<div class="big">${esc(f.big)}</div>`
+      : ((f.lines || []).map(l => `<div class="ln ${lineClass(l)}">${esc(l)}</div>`).join('') || '<div class="big">no textual changes</div>');
+    return `<div class="file">
+      <div class="fh"><span class="st ${esc(f.status)}">${esc(f.status)}</span>${esc(f.path)}
+        <span class="cnt"><span class="a">+${f.adds}</span> <span class="d">−${f.dels}</span></span></div>
+      <div class="diff">${body}</div>
+    </div>`;
+  }).join('');
+  const merge = (d.parents && d.parents.length > 1) ? ' · merge' : '';
+  modal.innerHTML = `
+    <div class="mh">
+      <div><div class="sha">${esc(d.short)}</div>
+           <div class="mmeta">${esc(d.agent || '?')} · ${esc(d.lane || '—')}${merge}</div></div>
+      <button class="x" onclick="closeDiff()">esc ✕</button>
+    </div>
+    <div class="mmsg">${esc((d.message || '').trim() || '—')}</div>
+    ${files || '<div class="big" style="padding:16px 20px">No file changes.</div>'}`;
+}
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-oid]');
+  if(el){ openDiff(el.getAttribute('data-oid')); return; }
+  if(e.target === scrim) closeDiff();
+});
+document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeDiff(); });
 
 let fails = 0;
 async function tick(){

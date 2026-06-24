@@ -68,6 +68,10 @@ fn handle(repo: &Repo, ref_lock: &Mutex<()>, mut req: Request) -> std::io::Resul
             Ok(v) => (200, serde_json::to_vec(&v).unwrap_or_default(), "application/json"),
             Err(e) => (500, e.to_string().into_bytes(), "text/plain"),
         },
+        (Method::Get, ["api", "commit", oid]) => match crate::web::commit_diff(repo, oid) {
+            Ok(v) => (200, serde_json::to_vec(&v).unwrap_or_default(), "application/json"),
+            Err(e) => (404, e.to_string().into_bytes(), "text/plain"),
+        },
         // --- sync protocol ---
         (Method::Get, ["refs"]) => match build_refs(repo) {
             Ok(b) => (200, b, "application/json"),
