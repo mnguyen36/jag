@@ -17,5 +17,11 @@ dist/
 build/
 out/
 
+# Rust
+target/
+
+# JAG's own object store (dogfooding JAG inside this git repo)
+.jag/
+
 # Dependencies
 node_modules/

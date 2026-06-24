@@ -1,0 +1,24 @@
+[package]
+name = "jag"
+version = "0.1.0"
+edition = "2021"
+description = "Just Another Git — agent-first version control for concurrent multi-agent workflows"
+license = "MIT"
+repository = "https://github.com/mnguyen36/jag"
+
+[[bin]]
+name = "jag"
+path = "src/main.rs"
+
+[dependencies]
+sha2 = "0.10"
+flate2 = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+walkdir = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
