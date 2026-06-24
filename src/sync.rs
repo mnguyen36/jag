@@ -39,14 +39,21 @@ pub fn fetch(repo: &Repo, remote_name: &str, url: &str) -> Result<Vec<FetchResul
             }
         }
 
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
         let status = match read_lane(repo, lane)? {
             None => {
                 write_lane(repo, lane, tip)?;
+                // Seed the undo journal so a clone can `undo` back to this tip.
+                crate::journal::record(repo, lane, tip, "fetch", now)?;
                 "created".to_string()
             }
             Some(local) if &local == tip => "up-to-date".to_string(),
             Some(local) if is_ancestor(repo, &local, tip)? => {
                 write_lane(repo, lane, tip)?;
+                crate::journal::record(repo, lane, tip, "fetch", now)?;
                 "fast-forward".to_string()
             }
             Some(_) => {
