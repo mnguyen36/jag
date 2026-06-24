@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use anyhow::{anyhow, Result};
-use tiny_http::{Method, Request, Response, Server};
+use tiny_http::{Header, Method, Request, Response, Server};
 
 use crate::graph::{is_ancestor, reachable};
 use crate::objects::{object_exists, read_raw, write_raw};
@@ -59,38 +59,50 @@ fn handle(repo: &Repo, ref_lock: &Mutex<()>, mut req: Request) -> std::io::Resul
         let _ = req.as_reader().read_to_end(&mut body);
     }
 
-    let (code, payload): (u16, Vec<u8>) = match (&method, segs.as_slice()) {
+    let (code, payload, ctype): (u16, Vec<u8>, &str) = match (&method, segs.as_slice()) {
+        // --- web dashboard ---
+        (Method::Get, []) | (Method::Get, ["index.html"]) => {
+            (200, crate::web::INDEX.as_bytes().to_vec(), "text/html; charset=utf-8")
+        }
+        (Method::Get, ["api", "overview"]) => match crate::web::overview(repo) {
+            Ok(v) => (200, serde_json::to_vec(&v).unwrap_or_default(), "application/json"),
+            Err(e) => (500, e.to_string().into_bytes(), "text/plain"),
+        },
+        // --- sync protocol ---
         (Method::Get, ["refs"]) => match build_refs(repo) {
-            Ok(b) => (200, b),
-            Err(e) => (500, e.into_bytes()),
+            Ok(b) => (200, b, "application/json"),
+            Err(e) => (500, e.into_bytes(), "text/plain"),
         },
         (Method::Get, ["closure", oid]) => match build_closure(repo, oid) {
-            Ok(b) => (200, b),
-            Err(e) => (500, e.into_bytes()),
+            Ok(b) => (200, b, "application/json"),
+            Err(e) => (500, e.into_bytes(), "text/plain"),
         },
         (Method::Get, ["object", oid]) => match read_raw(repo, oid) {
-            Ok(Some(bytes)) => (200, bytes),
-            Ok(None) => (404, Vec::new()),
-            Err(e) => (500, e.to_string().into_bytes()),
+            Ok(Some(bytes)) => (200, bytes, "application/octet-stream"),
+            Ok(None) => (404, Vec::new(), "text/plain"),
+            Err(e) => (500, e.to_string().into_bytes(), "text/plain"),
         },
         (Method::Post, ["object", oid]) => match write_raw(repo, oid, &body) {
-            Ok(()) => (200, b"ok".to_vec()),
-            Err(e) => (400, e.to_string().into_bytes()),
+            Ok(()) => (200, b"ok".to_vec(), "text/plain"),
+            Err(e) => (400, e.to_string().into_bytes(), "text/plain"),
         },
         (Method::Post, ["missing"]) => match build_missing(repo, &body) {
-            Ok(b) => (200, b),
-            Err(e) => (400, e.to_string().into_bytes()),
+            Ok(b) => (200, b, "application/json"),
+            Err(e) => (400, e.to_string().into_bytes(), "text/plain"),
         },
         // Lane names may contain '/' (e.g. "minh/newlane"), which splits into
         // several path segments — rejoin everything after "ref".
         (Method::Post, ["ref", lane_parts @ ..]) if !lane_parts.is_empty() => {
-            update_ref(repo, ref_lock, &lane_parts.join("/"), &body)
+            let (c, p) = update_ref(repo, ref_lock, &lane_parts.join("/"), &body);
+            (c, p, "application/json")
         }
-        _ => (404, b"not found".to_vec()),
+        _ => (404, b"not found".to_vec(), "text/plain"),
     };
 
     eprintln!("{} /{path} -> {code}", method_str(&method));
-    req.respond(Response::from_data(payload).with_status_code(code))
+    let header = Header::from_bytes(&b"Content-Type"[..], ctype.as_bytes())
+        .unwrap_or_else(|_| Header::from_bytes(&b"Content-Type"[..], &b"text/plain"[..]).unwrap());
+    req.respond(Response::from_data(payload).with_status_code(code).with_header(header))
 }
 
 fn build_refs(repo: &Repo) -> std::result::Result<Vec<u8>, String> {

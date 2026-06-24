@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JAG · dispatch</title>
+<style>
+  :root {
+    --bg:#0a1316; --bg-2:#08110f; --panel:#0f1f26; --panel-2:#0c1a20;
+    --line:#1b2e36; --line-2:#264049;
+    --text:#e8f1f0; --muted:#7f989f; --dim:#516c75;
+    --amber:#f2b14b; --teal:#49b3a0; --violet:#9f8ce0; --blue:#5b9cf0; --pink:#e06fae; --lime:#9cd16b;
+    --vermilion:#e0573f; --track:#2b4a54;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body {
+    margin:0; background:
+      radial-gradient(1200px 500px at 80% -10%, #10242b 0%, transparent 60%),
+      var(--bg);
+    color:var(--text); font-family:var(--sans);
+    font-size:14px; line-height:1.5; letter-spacing:.01em;
+    min-height:100vh;
+  }
+  a { color:inherit; }
+  .wrap { max-width:1180px; margin:0 auto; padding:22px 26px 64px; }
+
+  /* ---- top bar ---- */
+  .top { display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+         padding-bottom:18px; border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:baseline; gap:12px; }
+  .mark { font-family:var(--mono); font-weight:700; font-size:22px; letter-spacing:.34em;
+          color:var(--text); text-shadow:0 0 22px #f2b14b22; }
+  .mark b { color:var(--amber); }
+  .brand .sub { font-family:var(--mono); font-size:11px; color:var(--dim);
+                text-transform:uppercase; letter-spacing:.22em; }
+  .repo { font-family:var(--mono); font-size:13px; color:var(--muted);
+          padding:4px 10px; border:1px solid var(--line); border-radius:2px; background:var(--panel-2); }
+  .repo b { color:var(--text); font-weight:600; }
+  .live { margin-left:auto; display:flex; align-items:center; gap:10px;
+          font-family:var(--mono); font-size:11px; color:var(--muted);
+          text-transform:uppercase; letter-spacing:.18em; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--amber);
+         box-shadow:0 0 0 0 #f2b14b88; animation:pulse 2.4s ease-out infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 #f2b14b66;} 70%{box-shadow:0 0 0 7px #f2b14b00;} 100%{box-shadow:0 0 0 0 #f2b14b00;} }
+
+  /* ---- signal strip ---- */
+  .strip { display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+           background:var(--line); border:1px solid var(--line); margin:22px 0 28px; }
+  .stat { background:var(--panel); padding:16px 18px; }
+  .stat .k { font-family:var(--mono); font-size:11px; color:var(--dim);
+             text-transform:uppercase; letter-spacing:.2em; }
+  .stat .v { font-family:var(--mono); font-size:30px; font-weight:600; margin-top:6px; line-height:1; }
+  .stat.alert .v { color:var(--vermilion); }
+  .stat.alert.zero .v { color:var(--teal); }
+
+  /* ---- section eyebrow ---- */
+  .eyebrow { display:flex; align-items:center; gap:12px; margin:0 0 14px; }
+  .eyebrow h2 { font-family:var(--mono); font-size:12px; font-weight:600; margin:0;
+                text-transform:uppercase; letter-spacing:.28em; color:var(--muted); }
+  .eyebrow .rule { flex:1; height:1px; background:var(--line); }
+  .eyebrow .now { font-family:var(--mono); font-size:10px; color:var(--amber);
+                  text-transform:uppercase; letter-spacing:.22em; }
+
+  /* ---- lane board (the signature) ---- */
+  .board { border:1px solid var(--line); background:
+           linear-gradient(var(--panel),var(--panel-2)); border-radius:3px; overflow:hidden; }
+  .lane { display:grid; grid-template-columns:150px 1fr minmax(220px,360px);
+          align-items:center; }
+  .lane + .lane { border-top:1px solid var(--line); }
+  .lane .name { padding:0 14px; display:flex; align-items:center; gap:10px;
+                font-family:var(--mono); font-size:13px; font-weight:600;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .swatch { width:9px; height:9px; border-radius:50%; flex:none; box-shadow:0 0 10px currentColor; }
+  .track { position:relative; height:66px; display:flex; align-items:center;
+           justify-content:flex-end; gap:30px; padding:0 18px 0 10px;
+           border-right:1px dashed var(--line-2); }
+  .track::before { content:""; position:absolute; left:6px; right:18px; top:50%;
+                   height:2px; transform:translateY(-50%);
+                   background:linear-gradient(90deg, transparent, var(--track) 14%, var(--track)); }
+  .node { width:9px; height:9px; border-radius:50%; background:var(--panel);
+          border:2px solid var(--track); position:relative; z-index:1; flex:none; }
+  .node.merge { width:11px; height:11px; border-radius:2px; transform:rotate(45deg);
+                border-color:var(--violet); }
+  .node.tip { width:16px; height:16px; border-color:var(--ln); background:var(--ln);
+              box-shadow:0 0 0 4px color-mix(in srgb, var(--ln) 22%, transparent),
+                         0 0 18px color-mix(in srgb, var(--ln) 55%, transparent); }
+  .lane.is-live .node.tip { animation:tip 2.8s ease-in-out infinite; }
+  @keyframes tip { 0%,100%{ box-shadow:0 0 0 4px color-mix(in srgb,var(--ln) 18%,transparent), 0 0 14px color-mix(in srgb,var(--ln) 40%,transparent);}
+                   50%{ box-shadow:0 0 0 5px color-mix(in srgb,var(--ln) 30%,transparent), 0 0 26px color-mix(in srgb,var(--ln) 70%,transparent);} }
+  .info { padding:10px 16px; min-width:0; }
+  .info .row1 { display:flex; align-items:center; gap:8px; }
+  .chip { font-family:var(--mono); font-size:10px; letter-spacing:.06em;
+          padding:2px 7px; border-radius:2px; border:1px solid color-mix(in srgb,var(--ln) 45%,var(--line));
+          color:var(--ln); background:color-mix(in srgb,var(--ln) 12%, transparent); white-space:nowrap; }
+  .info .oid { font-family:var(--mono); font-size:12px; color:var(--muted); }
+  .info .msg { font-size:13px; color:var(--text); margin-top:3px;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .info .ago { font-family:var(--mono); font-size:11px; color:var(--dim); }
+
+  /* ---- lower grid ---- */
+  .cols { display:grid; grid-template-columns:1.55fr 1fr; gap:26px; margin-top:34px; }
+  .panel { border:1px solid var(--line); background:var(--panel); border-radius:3px; }
+
+  /* commit log */
+  .log .item { display:grid; grid-template-columns:78px 1fr auto; gap:12px;
+               align-items:baseline; padding:11px 16px; border-top:1px solid var(--line); }
+  .log .item:first-child { border-top:0; }
+  .log .sha { font-family:var(--mono); font-size:12px; color:var(--amber); }
+  .log .body { min-width:0; }
+  .log .body .m { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .log .body .meta { font-family:var(--mono); font-size:10.5px; color:var(--dim);
+                     text-transform:uppercase; letter-spacing:.1em; margin-top:2px; }
+  .log .merge-tag { color:var(--violet); }
+  .log .ago { font-family:var(--mono); font-size:11px; color:var(--dim); white-space:nowrap; }
+
+  /* contention */
+  .cont.clear { padding:20px 16px; color:var(--teal); font-family:var(--mono);
+                font-size:13px; display:flex; gap:10px; align-items:center; }
+  .cont .row { padding:12px 16px; border-top:1px solid var(--line); }
+  .cont .row:first-child { border-top:0; }
+  .cont .path { font-family:var(--mono); font-size:13px; color:var(--vermilion); display:flex; gap:9px; align-items:center; }
+  .cont .who { margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; }
+  .cont .who span { font-family:var(--mono); font-size:10.5px; color:var(--muted);
+                    border:1px solid var(--line-2); border-radius:2px; padding:2px 7px; }
+
+  /* agents */
+  .agents .a { display:flex; align-items:center; gap:10px; padding:11px 16px; border-top:1px solid var(--line); }
+  .agents .a:first-child { border-top:0; }
+  .agents .nm { font-family:var(--mono); font-size:13px; font-weight:600; }
+  .agents .ln { font-family:var(--mono); font-size:11px; color:var(--muted); margin-left:auto; }
+  .agents .ln b { color:var(--text); }
+
+  .sub-h { font-family:var(--mono); font-size:11px; color:var(--muted);
+           text-transform:uppercase; letter-spacing:.2em; padding:13px 16px;
+           border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px; }
+  .sub-h .n { color:var(--dim); }
+
+  .empty { padding:18px 16px; color:var(--dim); font-size:13px; }
+  .foot { margin-top:40px; font-family:var(--mono); font-size:11px; color:var(--dim);
+          display:flex; gap:14px; flex-wrap:wrap; border-top:1px solid var(--line); padding-top:16px; }
+  .foot .err { color:var(--vermilion); }
+
+  @media (max-width:860px){
+    .strip{grid-template-columns:repeat(2,1fr);} .cols{grid-template-columns:1fr;}
+    .lane{grid-template-columns:120px 1fr;} .info{grid-column:1/-1; border-top:1px dashed var(--line);}
+    .track{border-right:0;}
+  }
+  @media (prefers-reduced-motion:reduce){ .dot,.lane.is-live .node.tip{animation:none;} }
+  :focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="mark">J<b>A</b>G</span>
+      <span class="sub">dispatch</span>
+    </div>
+    <span class="repo">repo&nbsp;·&nbsp;<b id="repo">—</b></span>
+    <div class="live"><span class="dot" id="dot"></span><span id="live">connecting…</span></div>
+  </header>
+
+  <section class="strip" id="strip" aria-label="repository summary"></section>
+
+  <div class="eyebrow">
+    <h2>Lanes</h2><div class="rule"></div><span class="now">head ▸ now</span>
+  </div>
+  <section class="board" id="board"></section>
+
+  <div class="cols">
+    <div>
+      <div class="eyebrow"><h2>Activity</h2><div class="rule"></div></div>
+      <section class="panel log" id="log"></section>
+    </div>
+    <div>
+      <div class="eyebrow"><h2>Contention</h2><div class="rule"></div></div>
+      <section class="panel cont" id="cont"></section>
+      <div class="eyebrow" style="margin-top:26px"><h2>Agents</h2><div class="rule"></div></div>
+      <section class="panel agents" id="agents"></section>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <span id="root">—</span>
+    <span style="margin-left:auto" id="status"></span>
+  </footer>
+</div>
+
+<script>
+const LANE_COLORS = ['var(--amber)','var(--teal)','var(--violet)','var(--blue)','var(--pink)','var(--lime)'];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function ago(t, now){
+  if(!t) return '';
+  let d = Math.max(0, now - t);
+  if(d < 60) return d + 's';
+  if(d < 3600) return Math.floor(d/60) + 'm';
+  if(d < 86400) return Math.floor(d/3600) + 'h';
+  return Math.floor(d/86400) + 'd';
+}
+function laneColor(name, lanes){
+  const i = lanes.findIndex(l => l.name === name);
+  return LANE_COLORS[(i < 0 ? 0 : i) % LANE_COLORS.length];
+}
+
+function render(d){
+  const now = d.now || Math.floor(Date.now()/1000);
+  $('repo').textContent = d.repo || '—';
+  $('root').textContent = d.root || '';
+  $('dot').style.background = 'var(--amber)';
+  $('live').textContent = 'live · updated ' + ago(now - 0, now === 0 ? now : Math.floor(Date.now()/1000)) ;
+  $('live').textContent = 'live';
+
+  const cn = (d.contention || []).length;
+  $('strip').innerHTML = [
+    ['Lanes', (d.lanes||[]).length, ''],
+    ['Agents', (d.agents||[]).length, ''],
+    ['Objects', d.objects ?? 0, ''],
+    ['Contention', cn, 'alert' + (cn === 0 ? ' zero' : '')],
+  ].map(([k,v,cls]) => `<div class="stat ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+
+  // lane board
+  const lanes = d.lanes || [];
+  $('board').innerHTML = lanes.length ? lanes.map(l => {
+    const col = laneColor(l.name, lanes);
+    const nodes = (l.nodes || []).slice().reverse(); // oldest -> newest
+    const dots = nodes.map((n,i) => {
+      const isTip = i === nodes.length - 1;
+      const cls = isTip ? 'node tip' : ('node' + (n.merge ? ' merge' : ''));
+      return `<span class="${cls}" title="${esc(n.short)} — ${esc(n.message)}"></span>`;
+    }).join('');
+    const agent = l.agent ? `<span class="chip">${esc(l.agent)}</span>` : '';
+    return `<div class="lane is-live" style="--ln:${col}">
+      <div class="name"><span class="swatch" style="color:${col};background:${col}"></span>${esc(l.name)}</div>
+      <div class="track">${dots || '<span class="node tip"></span>'}</div>
+      <div class="info">
+        <div class="row1">${agent}<span class="oid">${esc(l.short || '')}</span><span class="ago" style="margin-left:auto">${ago(l.time, now)}</span></div>
+        <div class="msg">${esc(l.message || '—')}</div>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty">No lanes yet. Make a commit to open the first one.</div>`;
+
+  // activity log
+  const commits = d.commits || [];
+  $('log').innerHTML = commits.length ? commits.map(c => `
+    <div class="item">
+      <span class="sha">${esc(c.short)}</span>
+      <div class="body">
+        <div class="m">${esc(c.message || '—')}</div>
+        <div class="meta">${esc(c.agent || '?')} · ${esc(c.lane || '—')}${c.merge ? ' · <span class="merge-tag">merge</span>' : ''}</div>
+      </div>
+      <span class="ago">${ago(c.time, now)}</span>
+    </div>`).join('') : `<div class="empty">No commits on main yet.</div>`;
+
+  // contention
+  const cont = d.contention || [];
+  $('cont').innerHTML = cont.length ? cont.map(c => `
+    <div class="row">
+      <div class="path">⚠ ${esc(c.path)}</div>
+      <div class="who">${(c.producers||[]).map(p => `<span>${esc(p.who)} · ${esc(p.short)}</span>`).join('')}</div>
+    </div>`).join('') : `<div class="clear">✓ All lanes clear — no contention.</div>`;
+
+  // agents
+  const agents = d.agents || [];
+  $('agents').innerHTML = `<div class="sub-h">workers <span class="n">${agents.length}</span></div>` + (agents.length ? agents.map(a => `
+    <div class="a">
+      <span class="swatch" style="color:${laneColor(a.lane, lanes)};background:${laneColor(a.lane, lanes)}"></span>
+      <span class="nm">${esc(a.name)}</span>
+      <span class="ln">lane <b>${esc(a.lane || '—')}</b> · ${esc(a.short || '·')}</span>
+    </div>`).join('') : `<div class="empty">No agents.</div>`);
+}
+
+let fails = 0;
+async function tick(){
+  try {
+    const r = await fetch('/api/overview', {cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    render(await r.json());
+    fails = 0;
+    $('dot').style.background = 'var(--amber)';
+    $('status').textContent = 'connected';
+    $('status').className = '';
+  } catch(e){
+    fails++;
+    $('dot').style.background = 'var(--vermilion)';
+    $('live').textContent = 'reconnecting…';
+    $('status').textContent = 'connection lost — ' + esc(e.message);
+    $('status').className = 'err';
+  }
+}
+tick();
+setInterval(tick, 4000);
+</script>
+</body>
+</html>

@@ -23,6 +23,7 @@ mod server;
 mod status;
 mod sync;
 mod tree;
+mod web;
 mod worktree;
 
 use anyhow::Result;
