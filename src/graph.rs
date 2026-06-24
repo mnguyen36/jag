@@ -60,3 +60,41 @@ pub fn is_ancestor(repo: &Repo, anc: &str, desc: &str) -> Result<bool> {
     }
     Ok(false)
 }
+
+/// All commits reachable from `tip` (inclusive) by walking parents.
+pub fn ancestors(repo: &Repo, tip: &str) -> Result<BTreeSet<String>> {
+    let mut seen = BTreeSet::new();
+    let mut stack = vec![tip.to_string()];
+    while let Some(oid) = stack.pop() {
+        if !seen.insert(oid.clone()) {
+            continue;
+        }
+        if let Ok(c) = read_commit(repo, &oid) {
+            stack.extend(c.parents);
+        }
+    }
+    Ok(seen)
+}
+
+/// The nearest common ancestor of two commits, if any — the base for a 3-way
+/// merge. Breadth-first from `b` so the closest ancestor is found first.
+pub fn merge_base(repo: &Repo, a: &str, b: &str) -> Result<Option<String>> {
+    if a == b {
+        return Ok(Some(a.to_string()));
+    }
+    let anc_a = ancestors(repo, a)?;
+    let mut queue = std::collections::VecDeque::from([b.to_string()]);
+    let mut seen = BTreeSet::new();
+    while let Some(oid) = queue.pop_front() {
+        if !seen.insert(oid.clone()) {
+            continue;
+        }
+        if anc_a.contains(&oid) {
+            return Ok(Some(oid));
+        }
+        if let Ok(c) = read_commit(repo, &oid) {
+            queue.extend(c.parents);
+        }
+    }
+    Ok(None)
+}

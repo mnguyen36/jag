@@ -99,10 +99,42 @@ fn overlapping_edits_are_flagged_as_contention() {
     assert!(jag(&dir, Some("bob"), &["add", "shared.txt"]).1);
     assert!(jag(&dir, Some("bob"), &["commit", "-m", "bob"]).1);
 
-    // The same path changed two ways must NOT auto-merge.
+    // The same line changed two ways must NOT auto-merge.
     let (out, ok) = jag(&dir, None, &["reconcile"]);
-    assert!(!ok, "reconcile must refuse contended paths");
-    assert!(out.contains("contention"), "expected a contention report: {out}");
+    assert!(!ok, "reconcile must refuse overlapping edits");
+    assert!(out.contains("conflict"), "expected a conflict report: {out}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn reconcile_auto_merges_nonoverlapping_edits() {
+    let dir = fresh("automerge");
+    assert!(jag(&dir, None, &["init"]).1);
+    fs::write(dir.join("f.txt"), "l1\nl2\nl3\nl4\nl5\n").unwrap();
+    assert!(jag(&dir, None, &["add", "f.txt"]).1);
+    assert!(jag(&dir, None, &["commit", "-m", "base"]).1);
+    assert!(jag(&dir, None, &["agent", "start", "a"]).1);
+    assert!(jag(&dir, None, &["agent", "start", "b"]).1);
+
+    // Agent a edits the first line; agent b edits the last — different regions.
+    fs::write(dir.join("f.txt"), "A1\nl2\nl3\nl4\nl5\n").unwrap();
+    assert!(jag(&dir, Some("a"), &["add", "f.txt"]).1);
+    assert!(jag(&dir, Some("a"), &["commit", "-m", "a edit"]).1);
+
+    fs::write(dir.join("f.txt"), "l1\nl2\nl3\nl4\nB5\n").unwrap();
+    assert!(jag(&dir, Some("b"), &["add", "f.txt"]).1);
+    assert!(jag(&dir, Some("b"), &["commit", "-m", "b edit"]).1);
+
+    // JAG's own 3-way merge combines the two edits — no git, no conflict.
+    let (out, ok) = jag(&dir, None, &["reconcile", "a", "b", "--yes"]);
+    assert!(ok, "non-overlapping edits should auto-merge: {out}");
+
+    assert!(jag(&dir, None, &["checkout", "main"]).1);
+    assert_eq!(
+        fs::read_to_string(dir.join("f.txt")).unwrap(),
+        "A1\nl2\nl3\nl4\nB5\n"
+    );
 
     let _ = fs::remove_dir_all(&dir);
 }

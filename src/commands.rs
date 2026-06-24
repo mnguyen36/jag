@@ -141,11 +141,29 @@ pub fn commit(repo: &Repo, message: &str) -> Result<()> {
         }
     }
 
-    let parents: Vec<String> = parent.into_iter().collect();
+    let mut parents: Vec<String> = parent.into_iter().collect();
+
+    // If a reconcile paused on conflicts and we're committing on its target
+    // lane, finish the merge: pull in the recorded source tips as parents.
+    let mut completing_merge = false;
+    if let Some(ms) = crate::reconcile::read_merge_state(repo) {
+        if lane.as_deref() == Some(ms.into.as_str()) {
+            for p in ms.parents {
+                if !parents.contains(&p) {
+                    parents.push(p);
+                }
+            }
+            completing_merge = true;
+        }
+    }
+
     let oid = write_commit(repo, &tree, &parents, &agent, lane.as_deref(), message, now())?;
     match &lane {
         Some(l) => write_lane(repo, l, &oid)?,
         None => write_head(repo, &oid, Some(&agent))?,
+    }
+    if completing_merge {
+        crate::reconcile::clear_merge_state(repo)?;
     }
     if let Some(l) = &lane {
         let first = message.lines().next().unwrap_or("");
@@ -496,23 +514,69 @@ pub fn reconcile(
     // --- preview: list exactly what the merge will do, before doing it ---
     println!("Merge plan:  [{}]  ->  '{}'", plan.sources.join(", "), into);
 
+    if !plan.automerged.is_empty() {
+        println!("\n  auto-merged (3-way, no overlapping edits):");
+        for p in &plan.automerged {
+            println!("    ~ {p}");
+        }
+    }
+
     if !plan.conflicts.is_empty() {
         println!(
-            "\n  contention — {} path(s) changed differently by multiple sources:",
+            "\n  conflicts — {} path(s) with overlapping edits:",
             plan.conflicts.len()
         );
-        for (path, srcvals) in &plan.conflicts {
-            let producers: Vec<String> = srcvals
+        for (path, info) in &plan.conflicts {
+            let producers: Vec<String> = info
+                .producers
                 .iter()
                 .map(|(s, o)| match o {
                     Some(oid) => format!("{s}={}", &oid[..oid.len().min(8)]),
                     None => format!("{s}=deleted"),
                 })
                 .collect();
-            println!("    ! {path}  [{}]", producers.join(", "));
+            let note = if info.marked.is_some() {
+                ""
+            } else {
+                "  (not text-mergeable)"
+            };
+            println!("    ! {path}  [{}]{note}", producers.join(", "));
         }
-        println!("\nResolve those paths (jag checkout <lane>, edit, jag push), then re-run.");
-        bail!("merge aborted: unresolved contention");
+
+        // Drop conflict-marked files into the working tree, and record the merge
+        // so the next commit on the target lane becomes a proper merge commit.
+        let mut wrote = Vec::new();
+        for (path, info) in &plan.conflicts {
+            if let Some(content) = &info.marked {
+                let full = repo.root.join(path);
+                if let Some(parent) = full.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                fs::write(&full, content)?;
+                wrote.push(path.clone());
+            }
+        }
+        let mut parents = Vec::new();
+        if let Some(bt) = &plan.base_tip {
+            parents.push(bt.clone());
+        }
+        for lane in &plan.sources {
+            if let Some(t) = read_lane(repo, lane)? {
+                parents.push(t);
+            }
+        }
+        crate::reconcile::write_merge_state(repo, into, &parents)?;
+
+        if wrote.is_empty() {
+            println!("\nResolve on a lane (jag checkout <lane>, edit, jag push), then re-run.");
+        } else {
+            println!("\nWrote conflict markers (<<<<<<< … >>>>>>>) into: {}", wrote.join(", "));
+            println!(
+                "Edit to resolve, then `jag add . && jag commit -m \"...\"` on '{into}' \
+                 to finish the merge."
+            );
+        }
+        bail!("merge aborted: {} conflict(s)", plan.conflicts.len());
     }
 
     // Show the per-file effect on the target lane (base tree vs merged tree).
@@ -581,6 +645,9 @@ pub fn reconcile(
         into,
         short(&oid)
     );
+    if !plan.automerged.is_empty() {
+        println!("  {} file(s) auto-merged at line level", plan.automerged.len());
+    }
     println!("run `jag checkout {into}` to materialize the merged tree");
     Ok(())
 }
