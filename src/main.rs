@@ -216,6 +216,18 @@ enum LaneCmd {
 
 fn main() {
     let argv: Vec<String> = std::env::args().collect();
+
+    // Natural language is opt-in: a SINGLE quoted, multi-word argument is a
+    // request, e.g.  jag "reconcile and push main".  Everything else is a normal
+    // command (`jag reconcile`) and parses strictly — no guessing.
+    if argv.len() == 2 && argv[1].contains(|c: char| c.is_whitespace()) {
+        if let Err(e) = nl::run(&argv[1], None) {
+            eprintln!("jag: {e:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     match Cli::try_parse_from(&argv) {
         Ok(cli) => {
             if let Err(e) = run(cli) {
@@ -223,24 +235,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Err(e) => {
-            use clap::error::ErrorKind;
-            // Let --help / --version / no-args behave normally.
-            let sentence = argv.get(1..).map(|a| a.join(" ")).unwrap_or_default();
-            match e.kind() {
-                ErrorKind::DisplayHelp
-                | ErrorKind::DisplayVersion
-                | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => e.exit(),
-                _ if sentence.trim().is_empty() => e.exit(),
-                // Anything else: treat the whole line as a natural-language request.
-                _ => {
-                    if let Err(err) = nl::run(&sentence, None) {
-                        eprintln!("jag: {err:#}");
-                        std::process::exit(1);
-                    }
-                }
-            }
-        }
+        Err(e) => e.exit(),
     }
 }
 

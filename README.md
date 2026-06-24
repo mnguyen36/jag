@@ -38,8 +38,8 @@ JAG tracks who changed what and reconciles them.
 ## Commands
 
 ```
-jag <plain english>           e.g. `jag save my work and push`, `jag what changed`
-jag do <plain english>        same, explicit form (always natural-language)
+jag "<plain english>"         quoted = natural language, e.g. jag "save and push"
+jag do <plain english>        same, unquoted form
 jag model setup               download a local model (via Ollama) for free-form NL
 
 jag push [-m <msg>]           SAVE EVERYTHING: stage all + commit + push to origin
@@ -99,18 +99,21 @@ variable; otherwise the configured default (`main`) is used.
 
 ## Plain English
 
-Anything after `jag` that isn't a known command is treated as a request:
+A **single quoted argument** is a natural-language request; everything else is
+a normal command and parses strictly. So `jag reconcile` runs the command, while
+`jag "reconcile and push main"` is interpreted:
 
 ```
-$ jag save my work and push
+$ jag "save my work and push"
 Interpreted as:  jag push -m "my work"
-$ jag what changed
+$ jag "what changed?"
 Interpreted as:  jag status
-$ jag do bring feature-login into main
+$ jag "bring feature-login into main"
 Interpreted as:  jag merge feature-login
 ```
 
-It always prints the command it resolved to, and confirms before mutating.
+(`jag do <words>` is an equivalent unquoted form.) It always prints the command
+it resolved to, and confirms before mutating.
 A built-in matcher handles the common phrasings instantly and offline. For
 free-form requests, attach a small **local model** (no cloud):
 

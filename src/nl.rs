@@ -60,9 +60,9 @@ pub fn run(sentence: &str, agent: Option<String>) -> Result<()> {
     }
 
     bail!(
-        "couldn't map that to a command: \"{}\"\n  \
+        "couldn't map that request to a command: \"{}\"\n  \
          enable a local model for free-form requests:  jag model setup\n  \
-         or try:  jag save my work and push  |  jag merge <lane>  |  jag undo",
+         or try:  jag \"save my work and push\"  |  jag \"merge <lane>\"  |  jag undo",
         sentence.trim()
     )
 }

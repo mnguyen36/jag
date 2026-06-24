@@ -742,7 +742,7 @@ pub fn model_setup(model: &str, host: &str) -> Result<()> {
         model: model.to_string(),
     })?;
     println!("\nNL model enabled: {model} @ {host}");
-    println!("Try:  jag what changed   |   jag do tidy things up and push");
+    println!("Try:  jag \"what changed?\"   |   jag \"tidy things up and push\"");
     Ok(())
 }
 
