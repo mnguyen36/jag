@@ -165,8 +165,14 @@ cargo build --release --target x86_64-pc-windows-gnu   # -> jag.exe
 ```
 
 The Windows binary links only against system DLLs, so it's a single ~2 MB
-`jag.exe` you can drop on your PATH. See [CLAUDE.md](CLAUDE.md) for the
-architecture and development workflow.
+`jag.exe` you can drop on your PATH.
+
+## Documentation
+
+- **[docs/USING-JAG.md](docs/USING-JAG.md)** — operator's guide: how to init a
+  repo, run concurrent agents, merge, and sync. Point a fresh agent here and it
+  can drive `jag` from zero.
+- [CLAUDE.md](CLAUDE.md) — source layout and architecture (for developing `jag`).
 
 ## Status
 
