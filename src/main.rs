@@ -142,8 +142,8 @@ enum Command {
         #[arg(long, default_value_t = 4)]
         threads: usize,
     },
-    /// Run a plain-English request, e.g. `jag do commit my changes and push`
-    #[command(name = "do")]
+    /// (internal) NL bridge used by `jags`; prefer `jags <words>`
+    #[command(name = "do", hide = true)]
     Do {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
         words: Vec<String>,
@@ -215,20 +215,8 @@ enum LaneCmd {
 }
 
 fn main() {
-    let argv: Vec<String> = std::env::args().collect();
-
-    // Natural language is opt-in: a SINGLE quoted, multi-word argument is a
-    // request, e.g.  jag "reconcile and push main".  Everything else is a normal
-    // command (`jag reconcile`) and parses strictly — no guessing.
-    if argv.len() == 2 && argv[1].contains(|c: char| c.is_whitespace()) {
-        if let Err(e) = nl::run(&argv[1], None) {
-            eprintln!("jag: {e:#}");
-            std::process::exit(1);
-        }
-        return;
-    }
-
-    match Cli::try_parse_from(&argv) {
+    // `jag` parses strictly as commands. Natural language lives in `jags`.
+    match Cli::try_parse_from(std::env::args()) {
         Ok(cli) => {
             if let Err(e) = run(cli) {
                 eprintln!("jag: {e:#}");

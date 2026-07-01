@@ -10,6 +10,11 @@ repository = "https://github.com/mnguyen36/jag"
 name = "jag"
 path = "src/main.rs"
 
+# Natural-language front-end: `jags <plain english>` -> forwards to jag's NL.
+[[bin]]
+name = "jags"
+path = "src/bin/jags.rs"
+
 [dependencies]
 sha2 = "0.10"
 flate2 = "1"

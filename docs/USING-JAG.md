@@ -143,9 +143,8 @@ jag dl <url> [dir]             download (clone) from a jag server   (alias: clon
 jag remote add <name> <url> | list | remove <name>
 jag fetch [remote]             pull objects + lanes (fast-forwards locals)
 
-# natural language (optional)
-jag "<plain english>"          e.g. jag "save my work and push"
-jag do <plain english>         same, unquoted form
+# natural language (optional) — use the `jags` command
+jags <plain english>           e.g. jags save my work and push
 jag model setup | status | on | off    attach a local model for free-form NL
 
 # global
@@ -177,13 +176,19 @@ keep servers on localhost / trusted networks.)
 
 ---
 
-## 6. Natural language (optional)
+## 6. Natural language — the `jags` command (optional)
 
-A **single quoted argument** is treated as a request; everything else is a strict
-command. So `jag reconcile` runs the command, while `jag "reconcile and push"`
-is interpreted, printed back as the resolved command, and confirmed before
-running. A built-in matcher handles common phrasings offline; `jag model setup`
-attaches a small local model (via Ollama) for free-form requests.
+`jag` parses strictly as commands. For plain English, use **`jags`** (installed
+alongside `jag`): everything after it is a request.
+
+```
+jags update my lane and then reconcile
+jags save my work and push
+```
+
+`jags` prints the command it resolved to and confirms before mutating. A
+built-in matcher handles common phrasings offline; `jag model setup` attaches a
+small local model (via Ollama) for free-form requests.
 
 ---
 

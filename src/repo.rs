@@ -100,7 +100,9 @@ impl Repo {
         };
         path = path.canonicalize().unwrap_or(path);
         loop {
-            if path.join(JAG_DIR).is_dir() {
+            // Require the object store, so a stray/empty `.jag` directory isn't
+            // mistaken for a repository.
+            if path.join(JAG_DIR).join("objects").is_dir() {
                 return Ok(Repo::new(path, agent_override));
             }
             match path.parent() {

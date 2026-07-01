@@ -39,9 +39,12 @@ fn home() -> Option<PathBuf> {
 }
 
 pub fn config_path() -> Result<PathBuf> {
+    // Under `.config/jag/`, NOT `.jag/` — `.jag` is the repository marker, so a
+    // config dir there would make the home directory look like a jag repo.
     Ok(home()
         .context("cannot locate home directory for jag config")?
-        .join(".jag")
+        .join(".config")
+        .join("jag")
         .join("nl.json"))
 }
 

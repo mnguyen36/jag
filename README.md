@@ -38,8 +38,7 @@ JAG tracks who changed what and reconciles them.
 ## Commands
 
 ```
-jag "<plain english>"         quoted = natural language, e.g. jag "save and push"
-jag do <plain english>        same, unquoted form
+jags <plain english>          natural language, e.g. jags save my work and push
 jag model setup               download a local model (via Ollama) for free-form NL
 
 jag push [-m <msg>]           SAVE EVERYTHING: stage all + commit + push to origin
@@ -97,23 +96,21 @@ not git's `reset`/`revert`/`reflog`. Merging concurrent agents is `jag reconcile
 Select the acting agent with `--agent <name>` or the `JAG_AGENT` environment
 variable; otherwise the configured default (`main`) is used.
 
-## Plain English
+## Plain English — the `jags` command
 
-A **single quoted argument** is a natural-language request; everything else is
-a normal command and parses strictly. So `jag reconcile` runs the command, while
-`jag "reconcile and push main"` is interpreted:
+`jag` parses strictly as commands. For plain English use **`jags`** (installed
+alongside `jag`) — everything after it is a request:
 
 ```
-$ jag "save my work and push"
+$ jags save my work and push
 Interpreted as:  jag push -m "my work"
-$ jag "what changed?"
+$ jags what changed
 Interpreted as:  jag status
-$ jag "bring feature-login into main"
+$ jags bring feature-login into main
 Interpreted as:  jag merge feature-login
 ```
 
-(`jag do <words>` is an equivalent unquoted form.) It always prints the command
-it resolved to, and confirms before mutating.
+`jags` always prints the command it resolved to, and confirms before mutating.
 A built-in matcher handles the common phrasings instantly and offline. For
 free-form requests, attach a small **local model** (no cloud):
 
